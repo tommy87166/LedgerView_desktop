@@ -622,3 +622,53 @@ fn deleting_and_renaming_cells_preserves_other_results_and_snapshots() -> Result
     );
     Ok(())
 }
+
+#[test]
+fn snapshot_xlsx_roundtrip_preserves_values_and_failed_export_preserves_destination() -> Result<()>
+{
+    use calamine::{open_workbook, Data, Reader, Xlsx};
+    let s = Session::new()?;
+    let ds = s.file("example.parquet", "SELECT i AS seq, 12.50::DECIMAL(12,2) AS amount, '0012' AS code, '=1+1' AS note, NULL::VARCHAR AS missing, DATE '2020-02-03' AS posted, true AS ok, 18446744073709551615::UBIGINT AS large FROM range(4100) t(i)")?;
+    let columns = json!(["seq", "code", "amount", "note", "missing", "posted", "ok", "large"]);
+    let snap = s.send(json!({"type":"snapshot","id":ds["id"],"columns":columns,"sort":[],"filters":{},"description":""}))?;
+    let output = s.dir.path().join("snapshot.XLSX");
+    s.send(json!({"type":"export","id":snap["id"],"path":output}))?;
+    let mut book: Xlsx<_> = open_workbook(&output)?;
+    let sheet = book.worksheet_range_at(0).unwrap()?;
+    assert_eq!(sheet.get_size(), (4101, 8));
+    assert_eq!(sheet[(0, 1)], Data::String("code".into()));
+    assert_eq!(sheet[(4100, 0)], Data::Float(4099.));
+    assert_eq!(sheet[(1, 1)], Data::String("0012".into()));
+    assert_eq!(sheet[(1, 2)], Data::Float(12.5));
+    assert_eq!(sheet[(1, 3)], Data::String("=1+1".into()));
+    assert_eq!(sheet[(1, 4)], Data::Empty);
+    assert!(matches!(sheet[(1, 5)], Data::DateTime(_)));
+    assert_eq!(sheet[(1, 6)], Data::Bool(true));
+    assert_eq!(sheet[(1, 7)], Data::String("18446744073709551615".into()));
+    drop(book);
+    let original = fs::read(&output)?;
+    let ds = s.file("long.parquet", "SELECT repeat('x',32768) AS text")?;
+    let snap = s.send(json!({"type":"snapshot","id":ds["id"],"columns":["text"],"sort":[],"filters":{},"description":""}))?;
+    assert!(s
+        .send(json!({"type":"export","id":snap["id"],"path":output}))
+        .is_err());
+    assert_eq!(fs::read(output)?, original);
+    Ok(())
+}
+
+#[test]
+fn snapshot_xlsx_continues_on_a_new_sheet_at_excels_row_limit() -> Result<()> {
+    use calamine::{open_workbook, Data, Reader, Xlsx};
+    let s = Session::new()?;
+    let ds = s.file("many-rows.parquet", "SELECT i FROM range(1048576) t(i)")?;
+    let snap = s.send(json!({"type":"snapshot","id":ds["id"],"columns":["i"],"sort":[{"colId":"i","sort":"asc"}],"filters":{},"description":""}))?;
+    let path = s.dir.path().join("pages.xlsx");
+    s.send(json!({"type":"export","id":snap["id"],"path":path}))?;
+    let mut book: Xlsx<_> = open_workbook(path)?;
+    assert_eq!(book.sheet_names().len(), 2);
+    let last = book.worksheet_range_at(1).unwrap()?;
+    assert_eq!(last.get_size(), (2, 1));
+    assert_eq!(last[(0, 0)], Data::String("i".into()));
+    assert_eq!(last[(1, 0)], Data::Float(1048575.));
+    Ok(())
+}

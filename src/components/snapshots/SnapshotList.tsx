@@ -41,12 +41,12 @@ export function SnapshotList({ activeId, onOpenPreview }: Props) {
     }
   };
 
-  const onDownload = async (snap: SnapshotMeta) => {
+  const onDownload = async (snap: SnapshotMeta, format: 'parquet' | 'xlsx') => {
     setBusy(true);
     try {
       const path = await save({
-        defaultPath: sanitizeFileName(snap.displayName) + '.parquet',
-        filters: [{ name: 'Parquet', extensions: ['parquet'] }],
+        defaultPath: sanitizeFileName(snap.displayName) + '.' + format,
+        filters: [{ name: format === 'xlsx' ? 'Excel' : 'Parquet', extensions: [format] }],
       });
       if (path) await request('export', { id: snap.id, path });
     } catch (err) {
@@ -136,8 +136,11 @@ export function SnapshotList({ activeId, onOpenPreview }: Props) {
             <button onClick={() => startEdit(snap)} disabled={busy}>
               {t.snapshot.rename}
             </button>
-            <button onClick={() => void onDownload(snap)} disabled={busy}>
+            <button onClick={() => void onDownload(snap, 'parquet')} disabled={busy}>
               {t.snapshot.downloadParquet}
+            </button>
+            <button onClick={() => void onDownload(snap, 'xlsx')} disabled={busy}>
+              {t.snapshot.downloadExcel}
             </button>
           </div>
         </div>

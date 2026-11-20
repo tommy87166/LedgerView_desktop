@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bindings;
+mod excel;
 mod filter;
 mod ledger;
 mod mcp;
@@ -383,6 +384,13 @@ async fn open_workspace_directory(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 fn main() {
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--mcp-stdio")) {
+        if let Err(err) = mcp::stdio::run() {
+            eprintln!("LedgerView MCP: {err:#}");
+            std::process::exit(1);
+        }
+        return;
+    }
     tauri::Builder::default()
         .manage(mcp::Control::default())
         .plugin(tauri_plugin_dialog::init())

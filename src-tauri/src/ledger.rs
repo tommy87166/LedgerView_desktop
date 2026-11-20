@@ -499,11 +499,11 @@ pub fn remove(conn: &Connection, ds: &Dataset) -> Result<()> {
 
 pub fn export(conn: &Connection, ds: &Dataset, path: &Path) -> Result<()> {
     ensure!(ds.ephemeral, "Select a snapshot");
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    let excel = ext.eq_ignore_ascii_case("xlsx");
     ensure!(
-        path.extension()
-            .and_then(|s| s.to_str())
-            .is_some_and(|s| s.eq_ignore_ascii_case("parquet")),
-        "Choose a .parquet destination"
+        excel || ext.eq_ignore_ascii_case("parquet"),
+        "Choose a .parquet or .xlsx destination"
     );
     if path.exists() {
         let dest = dunce::canonicalize(path)?;
@@ -516,18 +516,22 @@ pub fn export(conn: &Connection, ds: &Dataset, path: &Path) -> Result<()> {
             );
         }
     }
-    let tmp = tempfile::NamedTempFile::new_in(path.parent().context("Invalid destination")?)?;
-    let fields = ds
-        .columns
-        .iter()
-        .map(|c| ident(&c.name))
-        .collect::<Vec<_>>()
-        .join(", ");
-    conn.execute_batch(&format!(
-        "COPY (SELECT {fields} FROM {}) TO {} (FORMAT PARQUET, COMPRESSION ZSTD)",
-        ds.relation(),
-        literal(tmp.path().to_str().context("Invalid path")?)
-    ))?;
+    let mut tmp = tempfile::NamedTempFile::new_in(path.parent().context("Invalid destination")?)?;
+    if excel {
+        crate::excel::write(conn, ds, tmp.as_file_mut())?;
+    } else {
+        let fields = ds
+            .columns
+            .iter()
+            .map(|c| ident(&c.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        conn.execute_batch(&format!(
+            "COPY (SELECT {fields} FROM {}) TO {} (FORMAT PARQUET, COMPRESSION ZSTD)",
+            ds.relation(),
+            literal(tmp.path().to_str().context("Invalid path")?)
+        ))?;
+    }
     tmp.persist(path)?;
     Ok(())
 }

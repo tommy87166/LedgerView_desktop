@@ -2,7 +2,7 @@ use super::*;
 use std::path::Path;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
-const DEFAULT_PORT: u16 = 18476;
+pub(super) const DEFAULT_PORT: u16 = 18476;
 
 pub(crate) fn init(conn: &Connection) -> Result<()> {
     conn.execute_batch(
@@ -251,13 +251,26 @@ pub(crate) async fn mcp_regenerate_token(
 
 #[tauri::command]
 pub(crate) async fn mcp_copy_connection(
+    claude_stdio: Option<bool>,
     app: AppHandle,
     state: State<'_, Control>,
 ) -> Result<(), String> {
     let running = state.0.lock().await;
     let r = running.as_ref().ok_or("MCP is disabled")?;
     let token = r.token.lock().unwrap();
-    let config = json!({"url":r.url, "headers":{"Authorization":format!("Bearer {token}")}});
+    let config = if claude_stdio.unwrap_or(false) {
+        let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+        let port = reqwest::Url::parse(&r.url)
+            .map_err(|e| e.to_string())?
+            .port_or_known_default()
+            .ok_or("Missing MCP port")?;
+        json!({"mcpServers":{"LedgerView":{
+            "command":executable, "args":["--mcp-stdio"],
+            "env":{(super::stdio::PORT_ENV):port.to_string(), (super::stdio::TOKEN_ENV):token.as_str()}
+        }}})
+    } else {
+        json!({"url":r.url, "headers":{"Authorization":format!("Bearer {token}")}})
+    };
     app.clipboard()
         .write_text(serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())

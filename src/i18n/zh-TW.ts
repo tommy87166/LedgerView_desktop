@@ -93,6 +93,7 @@ export const MESSAGES_ZH_TW = {
   },
 
   mcp: {
+    copyClaude: '複製 Claude Desktop 設定（stdio）',
     enable: '啟用本機 MCP', on: '開啟', off: '關閉', save: '儲存',
     invalidPort: '請輸入 1 至 65535 的整數，留白使用 18476。',
     token: '權杖', firstEnable: '首次開啟時產生', hidden: '權杖已隱藏', regenerate: '重新產生',
@@ -191,6 +192,7 @@ export const MESSAGES_ZH_TW = {
     copy: '複製',
     rename: '重新命名',
     delete: (name: string) => `刪除快照「${name}」`,
+    downloadExcel: '匯出 Excel',
     downloadParquet: '下載 Parquet',
     created: (name: string, rows: string) => `已建立快照「${name}」（${rows} 列）`,
     createFailed: (msg: string) => `建立快照失敗：${msg}`,

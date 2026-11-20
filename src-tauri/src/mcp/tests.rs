@@ -381,3 +381,86 @@ async fn quoted_source_names_read_only_the_registered_file() -> Result<()> {
     assert_eq!(result["rows"], json!([["124"]]));
     Ok(())
 }
+
+#[tokio::test]
+async fn stdio_client_lists_desktop_tools_and_queries_the_same_workspace() -> Result<()> {
+    let s = Server::new().await?;
+    s.file("sample.parquet")?;
+    let port = reqwest::Url::parse(&s.url)?.port().unwrap();
+    // CI also checks the released GUI executable inherits the client's pipes.
+    if let Some(executable) = std::env::var_os("LEDGERVIEW_TEST_STDIO_BIN") {
+        use std::process::Stdio;
+        let mut child = tokio::process::Command::new(executable)
+            .arg("--mcp-stdio")
+            .env(stdio::PORT_ENV, port.to_string())
+            .env(stdio::TOKEN_ENV, "test-token")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()?;
+        exercise_stdio(child.stdout.take().unwrap(), child.stdin.take().unwrap()).await?;
+        let status = tokio::time::timeout(Duration::from_secs(10), child.wait()).await??;
+        ensure!(status.success(), "stdio process exited with {status}");
+        return Ok(());
+    }
+    let (client, bridge) = tokio::io::duplex(65536);
+    let run = tokio::spawn(stdio::serve(
+        port,
+        "test-token".into(),
+        tokio::io::split(bridge),
+    ));
+    let (input, output) = tokio::io::split(client);
+    exercise_stdio(input, output).await?;
+    tokio::time::timeout(Duration::from_secs(10), run).await???;
+    Ok(())
+}
+
+async fn exercise_stdio(
+    input: impl tokio::io::AsyncRead + Unpin,
+    mut output: impl tokio::io::AsyncWrite + Unpin,
+) -> Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let mut lines = BufReader::new(input).lines();
+    for (id, method, params) in [
+        (
+            1,
+            "initialize",
+            json!({"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"stdio-test","version":"1"}}),
+        ),
+        (2, "tools/list", json!({})),
+        (
+            3,
+            "tools/call",
+            json!({"name":"query","arguments":{"sql":"SELECT count(*) AS n FROM sample"}}),
+        ),
+    ] {
+        let frame =
+            json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}).to_string() + "\n";
+        output.write_all(frame.as_bytes()).await?;
+        let line = tokio::time::timeout(Duration::from_secs(10), lines.next_line())
+            .await??
+            .context("No stdio response")?;
+        let reply: Value = serde_json::from_str(&line)?;
+        assert_eq!(reply["id"], id);
+        ensure!(reply["error"].is_null(), "{reply}");
+        match id {
+            1 => {
+                assert_eq!(reply["result"]["serverInfo"]["name"], "LedgerView");
+                output
+                    .write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
+                    .await?;
+            }
+            2 => assert!(reply["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|tool| tool["name"] == "edit_notebook")),
+            _ => assert_eq!(
+                reply["result"]["structuredContent"]["rows"],
+                json!([["125"]])
+            ),
+        }
+    }
+    output.shutdown().await?;
+    Ok(())
+}

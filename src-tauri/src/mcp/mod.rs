@@ -1,6 +1,7 @@
 mod cache;
 mod query;
 pub(crate) mod settings;
+pub(crate) mod stdio;
 pub(crate) use cache::clean_stale;
 
 use crate::{ledger, notebooks, Database, Engine};

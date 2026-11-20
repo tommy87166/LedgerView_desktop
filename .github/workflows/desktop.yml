@@ -53,6 +53,8 @@ jobs:
       - name: Type-check and build the desktop app
         run: npm run tauri -- build --ci --target ${{ matrix.target }} ${{ matrix.bundle }} -- --locked
       - name: Run Rust integration tests with bundled DuckDB
+        env:
+          LEDGERVIEW_TEST_STDIO_BIN: ${{ github.workspace }}/src-tauri/target/${{ matrix.target }}/release/${{ runner.os == 'Windows' && 'LedgerView.exe' || 'bundle/macos/LedgerView.app/Contents/MacOS/LedgerView' }}
         run: cargo test --manifest-path src-tauri/Cargo.toml --release --locked --target ${{ matrix.target }} --features tauri/custom-protocol
       - name: Verify the portable Windows executable
         if: runner.os == 'Windows'

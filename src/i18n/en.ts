@@ -95,6 +95,7 @@ export const MESSAGES_EN: Messages = {
   },
 
   mcp: {
+    copyClaude: 'Copy Claude Desktop config (stdio)',
     enable: 'Enable local MCP', on: 'On', off: 'Off', save: 'Save',
     invalidPort: 'Enter a whole number from 1 to 65535, or leave blank for 18476.',
     token: 'Token', firstEnable: 'Created on first start', hidden: 'Token hidden', regenerate: 'Regenerate',
@@ -193,6 +194,7 @@ export const MESSAGES_EN: Messages = {
     copy: 'Copy',
     rename: 'Rename',
     delete: (name: string) => `Delete snapshot "${name}"`,
+    downloadExcel: 'Export Excel',
     downloadParquet: 'Download Parquet',
     created: (name: string, rows: string) => `Created snapshot "${name}" (${rows} rows)`,
     createFailed: (msg: string) => `Failed to create snapshot: ${msg}`,

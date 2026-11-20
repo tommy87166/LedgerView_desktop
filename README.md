@@ -1,87 +1,94 @@
-# LedgerView
+<p align="center"><img src="public/favicon.svg" width="76" alt="LedgerView" /></p>
+<h1 align="center">LedgerView</h1>
+<p align="center">Query local Parquet ledgers, review the results, and save snapshots to Excel or Parquet.</p>
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="MIT" /></a>
+  <img src="https://img.shields.io/badge/DuckDB-2.0.0-fff000" alt="DuckDB 2.0.0" />
+  <a href="https://github.com/tommy87166/LedgerView_desktop/actions/workflows/desktop.yml"><img src="https://github.com/tommy87166/LedgerView_desktop/actions/workflows/desktop.yml/badge.svg" alt="Desktop CI" /></a>
+</p>
+<p align="center"><a href="https://github.com/tommy87166/LedgerView_desktop/actions/workflows/desktop.yml">Windows x64 · macOS Apple Silicon</a></p>
+<p align="center"><b>English</b> | <a href="README.zh-TW.md">繁體中文</a></p>
 
-LedgerView 在本機開啟 Parquet 明細帳，沿用 LedgerView Web 0.8.0 的表格操作。可以從科目明細複製傳票號清單，切到完整分錄查出對應項目，核對金額，再留存工作底稿。[線上版](https://ledgerview.pages.dev/) · [Web 版功能盤點](docs/ledgerview-web-features.md)
+---
 
-## 開始使用
+## 💡 Why LedgerView
 
-1. 在左側「資料庫」旁按「開啟」選取一或多個 `.parquet`，也可以直接拖入視窗。點選側欄中的檔名即可切換右側表格。程式記住原始路徑，重開時會再次讀取該檔案。
-2. 點欄名排序，按住 Shift 可加入第二個排序欄位。從欄位篩選器勾選候選值或設定條件。要跨檔追回整張傳票，在文字欄按右鍵選「複製成不重複陣列」，切換資料庫，在目標文字欄選「已複製的陣列」並套用。
-3. 在底部選擇數值欄，可核對整個篩選結果的合計、平均、非空筆數。按「欄位」調整要保留的欄，再按「快照」。
-4. 在左側「快照」清單中可預覽、改名、複製內容或另存 Parquet。快照保留當時的資料與排序，關閉來源後仍可開啟、再次篩選或建立下一份快照。關閉來源只會移除工作區中的登錄，原檔會保留。
+Follow a voucher across multiple Parquet files, check totals for a filtered set of entries, and keep the rows behind a reconciliation. Use the grid for interactive review or a SQL notebook for queries you want to run again.
 
-在左側「筆記本」旁按「新增」可建立 SQL 筆記本。點上方名稱可以改名，名稱旁會顯示自動儲存狀態。「＋ SQL 區塊」可加入更多查詢，點區塊標題可命名，按區塊右上角的 × 可刪除該段查詢。編輯區支援 DuckDB 語法高亮與補全：輸入 `FROM `、`JOIN ` 可選來源或快照，輸入資料表別名加句點可選欄位。Ctrl + Space 可叫出建議，方向鍵選擇，Enter 或 Tab 套用，Esc 關閉。在空白區塊選取「可查詢的資料表」會填入對應的 SELECT。按「執行」或 ⌘/Ctrl + Enter，結果會顯示在該段 SQL 下方，每頁 100 列。「執行並快照」會保留當次查詢的所有列。
+## 📦 Download
 
-上方「匯出」會將名稱與各段 SQL 存成 `.lvnb.json`。左側「筆記本 → 開啟」可將檔案加入工作區，同名筆記本會加上序號。重新開啟工作區後可再執行查詢，或從「快照」檢視之前留存的結果。
+Open a successful run of the desktop workflow and download the build from **Artifacts**. [Desktop builds](https://github.com/tommy87166/LedgerView_desktop/actions/workflows/desktop.yml)
 
-預設將來源清單、快照與筆記本保存在應用程式資料目錄的 `ledger.duckdb`。原始 Parquet 從選定位置就地查詢，移動來源後需重新選檔。介面支援繁體中文與英文，可在左下角齒輪的「設定」調整語言和表格行距。
+| Platform | Artifact | Run |
+| --- | --- | --- |
+| Windows x64 | `LedgerView.exe` | Open the executable. The desktop UI uses the Microsoft Edge WebView2 Runtime. |
+| macOS Apple Silicon | `LedgerView-macOS-arm64.app.zip` | Unzip and open `LedgerView.app`. The app is ad hoc signed and has no Apple notarization. |
 
-## 開發與建置
+## 🔧 How it works
 
-安裝 Node.js、Rust 及目標平台的 Tauri 原生建置工具。macOS 需有 Xcode Command Line Tools。首次編譯會從 C++ 原始碼建置 DuckDB。[Tauri 建置環境](https://v2.tauri.app/start/prerequisites/)
+1. **Open data.** Drag Parquet files into the window or choose **Databases → Open**. DuckDB reads the original files in place. Click a column header to sort, Shift-click to add a sort, or use the column filter to narrow the rows. Copy distinct voucher numbers from one text column and apply that list as a filter in another file.
+2. **Keep a snapshot.** Choose the columns and sort order, then click **Snapshot**. The saved rows stay available when you close the source. The snapshot list offers **Download Parquet** and **Export Excel**.
+3. **Work in SQL.** Create a notebook in the sidebar. Add named SQL cells, use Ctrl+Space for table and column suggestions, and run a cell with Ctrl+Enter or ⌘+Enter. Results appear beneath the cell. **Run & Snapshot** saves the full result. Notebooks autosave and can be shared as `.lvnb.json` files.
+
+| Data | Storage |
+| --- | --- |
+| Registered sources | Original Parquet files, queried by path. |
+| Saved snapshots and notebooks | The workspace's `ledger.duckdb`. Open its folder from Settings. In memory mode, changes last for the session. |
+| MCP query results | Temporary local Parquet files. The latest eight successful results can be paged or saved as snapshots. Stopping MCP or closing the app removes the cache. The next launch cleans up any interrupted session. |
+
+**Excel export.** Each sheet holds up to 1,048,575 data rows plus a header. Further rows continue on a new sheet in snapshot order. Numeric cells and supported dates can be used in calculations. Text IDs retain their leading zeros, values exceeding Excel's 15-digit numeric precision are written as text, and timestamps retain their precision as text. An export that exceeds Excel's column or cell-text limits reports an error and preserves any existing destination file.
+
+## 🤖 Connect an AI client
+
+Open **Settings → MCP** and enable the local service. Keep LedgerView running while the client uses it. A connected client can read every registered source and snapshot and edit notebooks across the workspace. Query results returned to a client are available to that client.
+
+**Claude Desktop (stdio)**
+
+1. Install LedgerView in its intended location, then choose **Copy Claude Desktop config (stdio)** in MCP settings.
+2. In Claude Desktop, open **Settings → Developer → Edit Config**. Merge the copied `LedgerView` entry into `mcpServers`, or paste the complete JSON if the file is empty.
+3. Quit and reopen Claude Desktop. Ask Claude to list the tables in your LedgerView workspace.
+
+Claude launches the same executable with `--mcp-stdio`. It forwards tool calls to the open workspace, so previews and snapshots appear in your desktop window. Copy the configuration again after moving the executable, changing the port, or rotating the token. The copied configuration contains the bearer token. [MCP local server setup](https://modelcontextprotocol.io/docs/develop/connect-local-servers)
+
+**Streamable HTTP.** Choose **Copy connection config** to get the loopback URL and authorization header. The default URL is `http://127.0.0.1:18476/mcp`. Change the port while MCP is off. Disk workspaces persist the port and token, and rotating the token revokes the previous one.
+
+| Tool | Use |
+| --- | --- |
+| `list_sources` | Get the SQL aliases, column names, and types for open sources and snapshots. |
+| `query` | Run read-only DuckDB SQL. Return a page to the client, or use `preview: true` to open the result on the desktop. |
+| `result_page` | Read subsequent pages using the returned cursor. |
+| `save_snapshot` | Save the complete result, optionally open it, or replace a snapshot previously created from an AI result. |
+| `list_notebooks` | Read notebook names, cells, SQL, and revisions. |
+| `edit_notebook` | Create or edit notebooks. Revision checks detect concurrent edits. |
+
+To inspect a query, enable the diagnostic log in Settings. It shows the SQL, bound values, elapsed time, and errors.
+
+## 🛠️ Development
+
+Install Node.js, Rust, and the Tauri prerequisites for your platform. The first Rust build compiles bundled DuckDB 2.0.0 and its Parquet support from C++. [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
 
 ```sh
 npm ci
 npm run tauri -- dev
 ```
 
-`npm run build` 檢查 TypeScript 並產生前端資產。`npm run tauri -- build` 建置桌面應用程式與該平台的安裝產物。在 macOS 可用 `npm run tauri -- build --bundles app` 產生 `.app`。
-
 ```sh
 npm test
-cargo test --manifest-path src-tauri/Cargo.toml
+npm run build
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+npm run tauri -- build
 ```
 
-原生整合測試會建立真實 Parquet，驗證篩選語意、精度、跨檔清單、大檔分頁、快照重開與匯出。開發時可在 WebView console 呼叫 `sqlLog()` 查看原生引擎的 SQL 與操作耗時，`sqlLog(false)` 關閉。
+## 📊 Verification
 
-### 從 GitHub 下載桌面版
+Frontend tests cover table filters, paging, notebooks, and the desktop bridge. Rust tests use synthetic Parquet data and real DuckDB queries to exercise sorting, precision, persistence, Excel and Parquet round trips, authorization, and MCP notebook edits. The Windows and macOS workflows run the stdio query test through the packaged executable.
 
-推送到 `main`、向 `main` 提出 pull request，或手動執行工作流程時，GitHub Actions 會在 Windows 和 macOS 各自建置桌面版並執行前端與 Rust 測試。開啟成功的執行紀錄，在 **Artifacts** 下載對應平台的檔案。[桌面版 CI](https://github.com/tommy87166/LedgerView_desktop/actions/workflows/desktop.yml)
+## 🗂️ Code layout
 
-| 平台 | 下載檔 | 使用方式 |
-| --- | --- | --- |
-| Windows x64 | `LedgerView.exe` | 直接執行。DuckDB 已編入執行檔，介面使用系統的 Microsoft Edge WebView2 Runtime。 |
-| macOS Apple Silicon | `LedgerView-macOS-arm64.app.zip` | 解壓縮後開啟 `LedgerView.app`。此版本使用 ad hoc 簽章，尚未通過 Apple 公證。 |
-
-## 技術選型
-
-| 層級 | 選型 |
+| Directory | Responsibility |
 | --- | --- |
-| 桌面 | Tauri 2，透過 `invoke` 呼叫 Rust |
-| 前端 | React、TypeScript、Vite、AG Grid Community，沿用 LedgerView 的表格互動與篩選模型 |
-| 查詢 | Rust + `duckdb` crate，內建 DuckDB 2.0.0，直接讀取 Parquet |
-| 本機 MCP | Rust 官方 SDK `rmcp` + Axum，使用 Streamable HTTP |
+| `src/components/` | React grid, snapshots, SQL notebooks, and workspace controls. |
+| `src-tauri/src/` | Tauri commands, DuckDB workspace, filters, notebook execution, and snapshot export. |
+| `src-tauri/src/mcp/` | MCP tools, HTTP service, stdio bridge, authentication, and temporary results. |
 
-桌面程式直接嵌入 DuckDB，發佈時只需處理桌面程式與原生函式庫的建置和簽章。前端沿用既有 TypeScript 堆疊，查詢由 Rust 提供。Cargo 固定使用 crates.io 的 `duckdb 1.20000.2`，透過 `bundled`、`parquet` 和 `json` features 將 DuckDB 2.0.0 與擴充編入程式。建置環境需能編譯 DuckDB 的 C++ 原始碼。[Tauri commands](https://v2.tauri.app/develop/calling-rust/) · [duckdb 1.20000.2](https://crates.io/crates/duckdb/1.20000.2) · [Cargo features](https://docs.rs/crate/duckdb/1.20000.2/features) · [Rust MCP SDK](https://github.com/modelcontextprotocol/rust-sdk)
-
-## 大型 Parquet 與畫面篩選
-
-- 第一版支援本機 Parquet。使用者選檔後，以 `read_parquet` 在原路徑查詢，先讀欄位資訊和首批資料。DuckDB 依查詢選取欄位，並在 Parquet 統計資訊允許時跳過不符合條件的 row group。[DuckDB Parquet](https://duckdb.org/docs/current/data/parquet/overview)
-- AG Grid 按需向後端取資料。畫面把欄位、篩選條件和排序傳給 Rust，由 Rust 產生 SQL 並綁定篩選值。跨到 JavaScript 的 `DECIMAL` 和大整數用字串傳輸，以保留精度。
-- 同步 DuckDB 查詢由背景 worker 執行。GUI 顯示執行時間並可取消查詢。查詢設定 4 個執行緒、2 GB 引擎記憶體預算與 8 GB 暫存磁碟上限。[DuckDB Connection API](https://docs.rs/duckdb/latest/duckdb/struct.Connection.html) · [DuckDB 效能調校](https://duckdb.org/docs/current/guides/performance/how_to_tune_workloads)
-
-## 從 AI 操作 LedgerView
-
-在左下角的 **設定 → MCP** 開啟服務，按 **複製連線設定** 即可取得用戶端需要的 URL 和 Bearer 授權標頭。預設連線網址為 `http://127.0.0.1:18476/mcp`。關閉 MCP 時可修改連接埠並按「儲存」，留白可恢復預設值。
-
-磁碟工作區會將連接埠及權杖存入 `ledger.duckdb`。首次成功啟用時會顯示完整權杖，關閉設定後即隱藏。重開 LedgerView 後，啟用 MCP 即可沿用原設定。按「重新產生」會顯示新權杖並立即撤銷舊權杖。記憶體模式使用預設連接埠，權杖僅保留至程式退出。[MCP 傳輸規格](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
-
-啟用期間，連線的 AI 可查詢整個工作區的來源和快照、讀取及編輯所有筆記本。在設定中打開診斷日誌，可看到標示為 MCP 的 SQL、耗時及錯誤。
-
-| 工具 | 行為 |
-| --- | --- |
-| `list_sources` | 列出資料表別名、欄位名稱及型別。 |
-| `query` | 執行一段唯讀 DuckDB SQL。預設將第一頁回傳給 AI。設 `preview: true` 會開啟全螢幕「預覽」，AI 收到結果 ID 和列數。使用者可在左下角按「快照」保存完整結果，之後 AI 可用 `save_snapshot` 的 `replaceId` 覆寫同一份快照。 |
-| `result_page` | 使用前一頁的 `next` 取得後續資料。每頁最多 100 列，資料列內容最多 512 KiB。 |
-| `save_snapshot` | 使用結果 ID 保存完整結果。傳 `focus: true` 可切換到該快照。之後指定同一個 `replaceId`，可整份更新 AI 建立的快照。 |
-| `list_notebooks` | 讀取筆記本、區塊名稱、SQL 與編輯版本。 |
-| `edit_notebook` | 建立筆記本，或依 `expectedRevision` 編輯現有筆記本的名稱、區塊與 SQL。既有區塊保留 slot，新區塊省略 slot。若使用者已修改，工具會回報衝突。 |
-
-MCP 查詢使用獨立的 DuckDB 實例，直接讀取已開啟的原始 Parquet。工作區快照以本次連線的暫存 Parquet 提供給查詢。SQL 執行上限 60 秒，最近八份成功結果可供翻頁、預覽與建立快照。關閉 MCP 或退出 LedgerView 時會清除 MCP 專用快取目錄裡的查詢結果及快照副本。若程式意外中斷，下次啟動會清除上次遺留的快取。已存快照及筆記本依工作區模式保存。在設定中按「開啟工作目錄」可前往保存 `ledger.duckdb` 的資料夾。
-
-## 大檔驗證
-
-在 Apple Silicon macOS 的原生 WebView 測試中，拖入 75,000,000 列、7 欄、10.53 GB 的合成 Parquet，在作業系統已有檔案快取的單次測量中，從拖入到顯示首列約 0.54 秒。另驗證了全檔篩選、排序、取消執行中的排序及取消後繼續查詢。
-
-## 後續效能與 MCP 驗證
-
-用目標平台的安裝產物開啟代表性大檔，量測首屏時間、常用篩選與全檔排序的延遲、尖峰記憶體和暫存磁碟用量。用實際 MCP client 查同一份資料，驗證 agent 彙總時仍可操作畫面，以及取消請求能中止 DuckDB 查詢。可用 LedgerView 現有的約 30 GB 合成 Parquet 產生器做壓力測試。[LedgerView 大檔測試資料](https://github.com/tommy87166/LedgerView/blob/main/scripts/generate-fixtures.mjs#L116)
+MIT licensed. [License](LICENSE)

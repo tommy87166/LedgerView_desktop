@@ -69,6 +69,11 @@ export function McpSettings() {
     setVisibleToken(newToken ?? '');
   };
 
+  const copyConnection = (claudeStdio: boolean) => perform(async () => {
+    await invoke('mcp_copy_connection', { claudeStdio });
+    useUi.getState().toast('success', t.copied);
+  });
+
   const rotate = async () => {
     if (await confirm(t.regenerateConfirm)) {
       setVisibleToken(await invoke<string>('mcp_regenerate_token'));
@@ -107,10 +112,10 @@ export function McpSettings() {
           {info?.hasToken && <button className="btn" disabled={disabled} onClick={() => void perform(rotate)}>{t.regenerate}</button>}
         </div>
       </div>
-      {enabled && <button className="btn mcp-copy" disabled={disabled} onClick={() => void perform(async () => {
-        await invoke('mcp_copy_connection');
-        useUi.getState().toast('success', t.copied);
-      })}>{t.copy}</button>}
+      {enabled && <div className="mcp-actions">
+        <button className="btn" disabled={disabled} onClick={() => void copyConnection(false)}>{t.copy}</button>
+        <button className="btn" disabled={disabled} onClick={() => void copyConnection(true)}>{t.copyClaude}</button>
+      </div>}
       {info && !info.persistent && <p className="mcp-hint">{t.memory}</p>}
       {error && <p className="sql-error" role="alert">{error}</p>}
     </section>

@@ -1028,7 +1028,6 @@ input[type='number']:not(.ag-input-field-input):focus {
 .mcp-setting code { overflow-wrap: anywhere; user-select: text; }
 .mcp-token { max-width: 100%; min-width: 0; }
 .mcp-hint { color: var(--lv-text-muted, #68645f); margin: 0; }
-.mcp-copy { justify-self: start; }
 .mcp-settings .sql-error { margin: 0; }
 .mcp-preview {
   position: fixed;
