@@ -5,6 +5,7 @@ import { useSnapshots } from './store/snapshots';
 import { restoreNotebooks } from './store/notebooks';
 import { useUi } from './store/ui';
 import { AppShell } from './components/layout/AppShell';
+import { DiagnosticLog } from './components/layout/DiagnosticLog';
 import { Toasts } from './components/common/Toasts';
 import { ActivityOverlay } from './components/common/ActivityOverlay';
 import { getMessages, useMessages } from './i18n';
@@ -50,7 +51,10 @@ export function App() {
       ) : !dbReady ? (
         <div className="center-screen">{t.app.initializing}</div>
       ) : (
-        <AppShell />
+        <div className="workspace-window">
+          <AppShell />
+          <DiagnosticLog />
+        </div>
       )}
       <Toasts />
       <ActivityOverlay />

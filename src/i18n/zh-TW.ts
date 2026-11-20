@@ -92,6 +92,22 @@ export const MESSAGES_ZH_TW = {
     release: '桌面版支援本機 Parquet 查詢、跨檔篩選、快照和 Parquet 匯出。',
   },
 
+  diagnostics: {
+    title: '診斷日誌',
+    setting: '顯示診斷日誌',
+    empty: '勾選後執行的 SQL 會顯示在這裡。',
+    time: '時間',
+    status: '狀態',
+    duration: '操作耗時',
+    running: '執行中',
+    done: '完成',
+    error: '錯誤',
+    parameters: '綁定參數',
+    engineSql: '引擎 SQL',
+    waiting: '等待引擎回報 SQL…',
+    submitted: '原始 SQL',
+  },
+
   notebook: {
     title: '筆記本',
     newBook: '新增',

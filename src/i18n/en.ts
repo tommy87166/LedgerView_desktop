@@ -94,6 +94,22 @@ export const MESSAGES_EN: Messages = {
       'Browse local Parquet files, filter across ledgers, save snapshots and export Parquet.',
   },
 
+  diagnostics: {
+    title: 'Diagnostic log',
+    setting: 'Show diagnostic log',
+    empty: 'SQL executed after enabling the log appears here.',
+    time: 'Time',
+    status: 'Status',
+    duration: 'Duration',
+    running: 'Running',
+    done: 'Done',
+    error: 'Error',
+    parameters: 'Parameters',
+    engineSql: 'Engine SQL',
+    waiting: 'Waiting for engine SQL…',
+    submitted: 'Submitted SQL',
+  },
+
   notebook: {
     title: 'Notebooks',
     newBook: 'New',

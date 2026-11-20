@@ -1,6 +1,7 @@
+use crate::bindings;
 use crate::ledger::{self, ident, literal, Dataset};
 use anyhow::{ensure, Context, Result};
-use duckdb::{params, Connection};
+use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::HashSet, fs, path::Path, time::Instant};
@@ -52,9 +53,10 @@ pub fn list(conn: &Connection) -> Result<Vec<Notebook>> {
 }
 
 fn get(conn: &Connection, id: &str) -> Result<Notebook> {
-    let text: String = conn.query_row(
+    let text: String = bindings::query_row(
+        conn,
         "SELECT document FROM ledger_notebooks WHERE id=?",
-        [id],
+        &[id],
         |r| r.get(0),
     )?;
     Ok(serde_json::from_str(&text)?)
@@ -66,9 +68,10 @@ fn insert(conn: &Connection, name: String, cells: Vec<Cell>) -> Result<Notebook>
         name,
         cells,
     };
-    conn.execute(
+    bindings::execute(
+        conn,
         "INSERT INTO ledger_notebooks VALUES (?,?)",
-        params![book.id, serde_json::to_string(&book)?],
+        &[&book.id, &serde_json::to_string(&book)?],
     )?;
     Ok(book)
 }
@@ -100,9 +103,10 @@ pub fn save(conn: &Connection, book: &Notebook) -> Result<()> {
             drop_result(&tx, &book.id, slot)?;
         }
     }
-    tx.execute(
+    bindings::execute(
+        &tx,
         "UPDATE ledger_notebooks SET document=? WHERE id=?",
-        params![serde_json::to_string(book)?, book.id],
+        &[&serde_json::to_string(book)?, &book.id],
     )?;
     tx.commit()?;
     Ok(())
@@ -189,7 +193,7 @@ pub fn delete(conn: &Connection, id: &str) -> Result<()> {
     for (slot, _) in book.slots() {
         drop_result(&tx, id, slot)?;
     }
-    tx.execute("DELETE FROM ledger_notebooks WHERE id=?", [id])?;
+    bindings::execute(&tx, "DELETE FROM ledger_notebooks WHERE id=?", &[id])?;
     tx.commit()?;
     Ok(())
 }
@@ -225,9 +229,10 @@ fn sources(conn: &Connection) -> Result<Vec<(String, Dataset)>> {
                 };
                 let name = distinct_name(base, &taken);
                 // Closing one of two identically named files must not retarget saved SQL.
-                conn.execute(
+                bindings::execute(
+                    conn,
                     "UPDATE ledger_entries SET sql_alias=? WHERE id=?",
-                    params![name, ds.id],
+                    &[&name, &ds.id],
                 )?;
                 taken.insert(name.to_ascii_lowercase());
                 name

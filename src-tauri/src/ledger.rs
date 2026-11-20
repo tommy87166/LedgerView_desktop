@@ -1,6 +1,7 @@
+use crate::bindings;
 use crate::filter::{order, predicate, Filters, Sort};
 use anyhow::{ensure, Context, Result};
-use duckdb::{params, params_from_iter, Connection};
+use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use uuid::Uuid;
@@ -171,18 +172,21 @@ pub fn open(conn: &Connection, path: &Path) -> Result<Dataset> {
         ephemeral: false,
     };
     refresh(conn, &mut ds)?;
-    conn.execute(
+    bindings::execute(
+        conn,
         "INSERT INTO ledger_entries (id, dataset, snapshot) VALUES (?, ?, NULL)",
-        params![ds.id, serde_json::to_string(&ds)?],
+        &[ds.id.as_str(), &serde_json::to_string(&ds)?],
     )?;
     Ok(ds)
 }
 
 pub fn dataset(conn: &Connection, id: &str) -> Result<Dataset> {
-    let json: String =
-        conn.query_row("SELECT dataset FROM ledger_entries WHERE id=?", [id], |r| {
-            r.get(0)
-        })?;
+    let json: String = bindings::query_row(
+        conn,
+        "SELECT dataset FROM ledger_entries WHERE id=?",
+        &[id],
+        |r| r.get(0),
+    )?;
     Ok(serde_json::from_str(&json)?)
 }
 
@@ -215,9 +219,10 @@ pub fn restore(conn: &Connection) -> Result<Catalog> {
             state.failed.push(ds.source_file);
             continue;
         }
-        conn.execute(
+        bindings::execute(
+            conn,
             "UPDATE ledger_entries SET dataset=? WHERE id=?",
-            params![serde_json::to_string(&ds)?, ds.id],
+            &[&serde_json::to_string(&ds)?, &ds.id],
         )?;
         state.datasets.push(ds);
     }
@@ -228,7 +233,7 @@ pub fn restore(conn: &Connection) -> Result<Catalog> {
 pub fn count(conn: &Connection, ds: &Dataset, filters: &Filters) -> Result<i64> {
     let p = predicate(ds, filters)?;
     let sql = format!("SELECT count(*) FROM {}{}", ds.relation(), p.sql);
-    Ok(conn.query_row(&sql, params_from_iter(&p.params), |r| r.get(0))?)
+    Ok(bindings::query_row(conn, &sql, &p.params, |r| r.get(0))?)
 }
 
 fn display_expr(c: &Column) -> String {
@@ -246,11 +251,8 @@ fn values(
     args: &[String],
     width: usize,
 ) -> Result<Vec<Vec<Option<String>>>> {
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_map(params_from_iter(args), |r| {
-        (0..width).map(|i| r.get(i)).collect()
-    })?;
-    Ok(rows.collect::<duckdb::Result<_>>()?)
+    let rows = bindings::query_rows(conn, sql, args, |r| (0..width).map(|i| r.get(i)).collect())?;
+    Ok(rows)
 }
 
 pub fn page(
@@ -293,9 +295,7 @@ pub fn distinct(
         ds.relation(),
         p.sql
     );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(params_from_iter(&p.params), |r| r.get(0))?;
-    Ok(rows.collect::<duckdb::Result<_>>()?)
+    Ok(bindings::query_rows(conn, &sql, &p.params, |r| r.get(0))?)
 }
 
 #[derive(Serialize)]
@@ -320,7 +320,7 @@ pub fn aggregate(
         ds.relation(),
         p.sql
     );
-    Ok(conn.query_row(&sql, params_from_iter(&p.params), |r| {
+    Ok(bindings::query_row(conn, &sql, &p.params, |r| {
         Ok(Aggregate {
             sum: r.get(0)?,
             avg: r.get(1)?,
@@ -368,7 +368,7 @@ pub(crate) fn snapshot_in_transaction(
     // Assign preview ordinals after sorting. This also handles an actual data column named rowid.
     let sql = format!("CREATE TABLE {} AS SELECT *, row_number() OVER () - 1 AS {} FROM (SELECT {fields} FROM {}{}{})",
         ident(&table), ident(&ds.row_key), ds.relation(), p.sql, order(ds, &sort)?);
-    tx.execute(&sql, params_from_iter(&p.params))?;
+    bindings::execute(tx, &sql, &p.params)?;
     let row_count = tx.query_row(
         &format!("SELECT count(*) FROM {}", ident(&table)),
         [],
@@ -399,12 +399,13 @@ pub(crate) fn snapshot_in_transaction(
         imported_at: snap.created_at.clone(),
         ephemeral: true,
     };
-    tx.execute(
+    bindings::execute(
+        tx,
         "INSERT INTO ledger_entries (id, dataset, snapshot) VALUES (?,?,?)",
-        params![
-            table,
-            serde_json::to_string(&preview)?,
-            serde_json::to_string(&snap)?
+        &[
+            &table,
+            &serde_json::to_string(&preview)?,
+            &serde_json::to_string(&snap)?,
         ],
     )?;
     Ok(snap)
@@ -415,20 +416,22 @@ pub fn rename(conn: &Connection, ds: &mut Dataset, name: String) -> Result<()> {
         ds.ephemeral && !name.trim().is_empty(),
         "Invalid snapshot name"
     );
-    let raw: String = conn.query_row(
+    let raw: String = bindings::query_row(
+        conn,
         "SELECT snapshot FROM ledger_entries WHERE id=?",
-        [&ds.id],
+        &[&ds.id],
         |r| r.get(0),
     )?;
     let mut snap: Snapshot = serde_json::from_str(&raw)?;
     snap.display_name = name.trim().into();
     ds.display_name = snap.display_name.clone();
-    conn.execute(
+    bindings::execute(
+        conn,
         "UPDATE ledger_entries SET dataset=?, snapshot=?, sql_alias=NULL WHERE id=?",
-        params![
-            serde_json::to_string(ds)?,
-            serde_json::to_string(&snap)?,
-            ds.id
+        &[
+            &serde_json::to_string(ds)?,
+            &serde_json::to_string(&snap)?,
+            &ds.id,
         ],
     )?;
     Ok(())
@@ -439,7 +442,7 @@ pub fn remove(conn: &Connection, ds: &Dataset) -> Result<()> {
     if ds.ephemeral {
         tx.execute_batch(&format!("DROP TABLE {}", ident(&ds.table_name)))?;
     }
-    tx.execute("DELETE FROM ledger_entries WHERE id=?", [&ds.id])?;
+    bindings::execute(&tx, "DELETE FROM ledger_entries WHERE id=?", &[&ds.id])?;
     tx.commit()?;
     Ok(())
 }

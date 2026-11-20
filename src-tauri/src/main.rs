@@ -1,10 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bindings;
 mod filter;
 mod ledger;
 mod notebooks;
 
 use anyhow::{Context, Result};
+use bindings::{BindingTrace, LoggedStatement};
 use duckdb::{Connection, InterruptHandle};
 use filter::{Filters, Sort};
 use serde::Deserialize;
@@ -14,7 +16,7 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-use tauri::{Manager, State};
+use tauri::{ipc::JavaScriptChannelId, Manager, State, Webview};
 
 #[derive(Deserialize)]
 #[serde(
@@ -137,14 +139,20 @@ impl Engine {
         })
     }
 
-    fn execute(&self, request: Request, token: String, trace: bool) -> Result<Value> {
+    fn execute(
+        &self,
+        request: Request,
+        token: String,
+        trace: bool,
+        on_statement: Option<&(dyn Fn(LoggedStatement) + Sync)>,
+    ) -> Result<Value> {
         let conn = self
             .conn
             .lock()
             .map_err(|_| anyhow::anyhow!("Database unavailable"))?;
         *self.active.lock().unwrap() = Some((token, conn.interrupt_handle()));
         let result = if trace {
-            self.trace_request(&conn, request)
+            self.trace_request(&conn, request, on_statement)
         } else {
             self.dispatch(&conn, request)
         };
@@ -152,15 +160,51 @@ impl Engine {
         result
     }
 
-    fn trace_request(&self, conn: &Connection, request: Request) -> Result<Value> {
-        conn.execute_batch("CALL enable_logging('QueryLog', storage='memory')")?;
+    fn trace_request(
+        &self,
+        conn: &Connection,
+        request: Request,
+        on_statement: Option<&(dyn Fn(LoggedStatement) + Sync)>,
+    ) -> Result<Value> {
+        let worker_id: u64 = conn.query_row("SELECT current_connection_id()", [], |r| r.get(0))?;
+        let bindings = BindingTrace::new();
+        let observer = on_statement.and_then(|_| conn.try_clone().ok());
+        conn.execute_batch(
+            "CALL enable_logging('QueryLog', storage='memory', storage_buffer_size=0)",
+        )?;
         let started = std::time::Instant::now();
-        let result = self.dispatch(conn, request);
-        let elapsed_ms = started.elapsed().as_secs_f64() * 1000.;
+        let (result, elapsed_ms) = std::thread::scope(|scope| {
+            let (done, stop) = std::sync::mpsc::channel();
+            if let (Some(observer), Some(notify)) = (observer, on_statement) {
+                // Listen on a second connection so a long query cannot block its own diagnostics.
+                let bindings = bindings.clone();
+                scope.spawn(move || {
+                    let mut previous = String::new();
+                    while let Err(std::sync::mpsc::RecvTimeoutError::Timeout) =
+                        stop.recv_timeout(std::time::Duration::from_millis(200))
+                    {
+                        let latest = observer.query_row(
+                            "SELECT message FROM duckdb_logs WHERE connection_id=? AND type='QueryLog' ORDER BY timestamp DESC LIMIT 1",
+                            [worker_id], |r| r.get::<_, String>(0),
+                        );
+                        if let Ok(sql) = latest {
+                            if previous != sql {
+                                previous.clone_from(&sql);
+                                notify(bindings.resolve(sql));
+                            }
+                        }
+                    }
+                });
+            }
+            let result = bindings.capture(|| self.dispatch(conn, request));
+            let elapsed_ms = started.elapsed().as_secs_f64() * 1000.;
+            let _ = done.send(());
+            (result, elapsed_ms)
+        });
         conn.execute_batch("CALL disable_logging()")?;
-        let mut stmt = conn.prepare("SELECT message FROM duckdb_logs() WHERE type='QueryLog' AND message NOT LIKE '%disable_logging()%' ORDER BY timestamp")?;
+        let mut stmt = conn.prepare("SELECT message FROM duckdb_logs WHERE connection_id=? AND type='QueryLog' AND message <> 'CALL disable_logging()' ORDER BY timestamp")?;
         let queries = stmt
-            .query_map([], |r| r.get::<_, String>(0))?
+            .query_map([worker_id], |r| Ok(bindings.resolve(r.get(0)?)))?
             .collect::<duckdb::Result<Vec<_>>>()?;
         conn.execute_batch("CALL truncate_duckdb_logs()")?;
         Ok(match result {
@@ -287,11 +331,21 @@ async fn ledger_request(
     request: Request,
     token: String,
     trace: Option<bool>,
+    webview: Webview,
+    on_statement: Option<JavaScriptChannelId>,
 ) -> Result<Value, String> {
     let engine = database.0.clone()?;
+    let on_statement = on_statement.map(|id| id.channel_on::<_, LoggedStatement>(webview));
     tauri::async_runtime::spawn_blocking(move || {
+        let notify = |sql| {
+            if let Some(channel) = &on_statement {
+                let _ = channel.send(sql);
+            }
+        };
+        let listener: Option<&(dyn Fn(LoggedStatement) + Sync)> =
+            on_statement.as_ref().map(|_| &notify as _);
         engine
-            .execute(request, token, trace.unwrap_or(false))
+            .execute(request, token, trace.unwrap_or(false), listener)
             .map_err(|e| format!("{e:#}"))
     })
     .await

@@ -1,4 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
+import { useDiagnostics, type DiagnosticStatement } from '../store/diagnostics';
 import { getMessages } from '../i18n';
 import type { DatasetMeta } from '../types/dataset';
 import type { FilterModel, SortModel } from '../types/filters';
@@ -47,6 +48,11 @@ interface Commands {
   export: [ById & { path: string }, void];
 }
 
+// Browser previews and older backends can send plain SQL without parameter metadata.
+function diagnosticStatement(statement: DiagnosticStatement | string): DiagnosticStatement {
+  return typeof statement === 'string' ? { sql: statement } : statement;
+}
+
 let trace = false;
 Object.assign(globalThis, {
   sqlLog: (on = true) => {
@@ -82,19 +88,32 @@ export function request<K extends keyof Commands>(
       label: type === 'open' ? getMessages().activity.importing : getMessages().activity.query,
       started: Date.now(),
     });
+    const diagnostics = useDiagnostics.getState();
+    const recording = diagnostics.enabled && type !== 'diskSpace' && type !== 'fileSize';
+    const consoleTrace = trace;
+    const started = performance.now();
+    let elapsedMs: number | undefined;
+    let statements: DiagnosticStatement[] = [];
+    let error: string | undefined;
     try {
+      if (recording) {
+        diagnostics.begin({ token, operation: type, sql: 'sql' in args ? args.sql : undefined, started: Date.now() });
+      }
       const input = { request: { type, ...args }, token };
-      if (!trace) return await invoke<Commands[K][1]>('ledger_request', input);
+      if (!recording && !consoleTrace) return await invoke<Commands[K][1]>('ledger_request', input);
+      const onStatement = recording ? new Channel<DiagnosticStatement | string>((stmt) => diagnostics.statement(token, diagnosticStatement(stmt))) : undefined;
       const report = await invoke<{
         result: Commands[K][1];
         error?: string;
-        queries: string[];
+        queries: (DiagnosticStatement | string)[];
         elapsedMs: number;
-      }>('ledger_request', { ...input, trace: true });
+      }>('ledger_request', { ...input, trace: true, onStatement });
+      elapsedMs = report.elapsedMs;
+      statements = report.queries.map(diagnosticStatement);
       const count = Array.isArray(report.result)
         ? report.result.length
         : Number(report.result != null);
-      console.log(
+      if (consoleTrace) console.log(
         'DuckDB',
         type,
         report.elapsedMs.toFixed(1) + ' ms',
@@ -103,7 +122,11 @@ export function request<K extends keyof Commands>(
       );
       if (report.error) throw new Error(report.error);
       return report.result;
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+      throw cause;
     } finally {
+      if (recording) diagnostics.finish(token, elapsedMs ?? performance.now() - started, statements, error);
       change(null);
     }
   });

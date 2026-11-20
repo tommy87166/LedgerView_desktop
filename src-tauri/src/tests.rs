@@ -21,7 +21,7 @@ impl Session {
     }
     fn send(&self, req: Value) -> Result<Value> {
         self.engine
-            .execute(serde_json::from_value(req)?, "test".into(), false)
+            .execute(serde_json::from_value(req)?, "test".into(), false, None)
     }
     fn file(&self, name: &str, query: &str) -> Result<Value> {
         let path = self.dir.path().join(name);
@@ -276,14 +276,108 @@ fn console_trace_reports_sql_and_can_be_disabled() -> Result<()> {
         id: ds["id"].as_str().unwrap().into(),
         filters: Filters::new(),
     };
-    let report = s.engine.execute(command(), "trace".into(), true)?;
+    let report = s.engine.execute(command(), "trace".into(), true, None)?;
     assert_eq!(report["result"], 1);
     assert!(report["queries"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|v| v.as_str().unwrap().contains("count(*)")));
-    assert_eq!(s.engine.execute(command(), "plain".into(), false)?, 1);
+        .any(|v| v["sql"].as_str().unwrap().contains("count(*)")));
+    assert_eq!(s.engine.execute(command(), "plain".into(), false, None)?, 1);
+    Ok(())
+}
+
+#[test]
+fn diagnostic_parameters_match_each_filter_and_catalog_lookup() -> Result<()> {
+    let s = Session::new()?;
+    let ds = s.file(
+        "parameters.parquet",
+        "SELECT 'Demo''Item?' AS SAMPLE_LABEL, 42 AS amount",
+    )?;
+    let request = serde_json::from_value(json!({
+        "type":"count", "id":ds["id"], "filters":{
+            "SAMPLE_LABEL":{"filterType":"text","type":"equals","filter":"demo'item?"},
+            "amount":{"filterType":"number","type":"inRange","filter":40,"filterTo":50}
+        }
+    }))?;
+    let report = s.engine.execute(request, "parameters".into(), true, None)?;
+    assert_eq!(report["result"], 1);
+    let mut saw = (false, false);
+    for statement in report["queries"].as_array().unwrap() {
+        let sql = statement["sql"].as_str().unwrap();
+        assert!(!sql.contains("/*lv_bind_"));
+        if sql.contains("ledger_entries WHERE id=?") {
+            assert_eq!(statement["params"], json!([ds["id"]]));
+            saw.0 = true;
+        } else if sql.contains("lower(?)") {
+            assert_eq!(statement["params"], json!(["demo'item?", "40", "50"]));
+            saw.1 = true;
+        }
+    }
+    assert_eq!(saw, (true, true));
+    Ok(())
+}
+
+#[test]
+fn identical_prepared_sql_keeps_values_from_each_execution() -> Result<()> {
+    let conn = Connection::open_in_memory()?;
+    let trace = BindingTrace::new();
+    let sql = "SELECT ? || '?'";
+    conn.execute_batch("CALL enable_logging('QueryLog', storage='memory')")?;
+    trace.capture(|| -> Result<()> {
+        for value in ["first", "", "last?"] {
+            let result: String = bindings::query_row(&conn, sql, &[value], |r| r.get(0))?;
+            assert_eq!(result, format!("{value}?"));
+        }
+        Ok(())
+    })?;
+    conn.execute_batch("CALL disable_logging()")?;
+    let mut stmt =
+        conn.prepare("SELECT message FROM duckdb_logs WHERE type='QueryLog' ORDER BY timestamp")?;
+    let mut values = Vec::new();
+    for msg in stmt.query_map([], |r| r.get::<_, String>(0))? {
+        let statement = trace.resolve(msg?);
+        if statement.sql == sql {
+            values.push(statement.params);
+        }
+    }
+    values.dedup(); // prepare and execute may both be logged
+    assert_eq!(values, vec![vec!["first"], vec![""], vec!["last?"]]);
+    Ok(())
+}
+
+#[test]
+fn live_diagnostics_stream_the_worker_sql_and_report_its_error() -> Result<()> {
+    let s = Session::new()?;
+    let book = s.send(json!({"type":"createNotebook","cellName":"Query"}))?;
+    let run = Request::RunNotebook {
+        id: book["id"].as_str().unwrap().into(),
+        cell: 0,
+        sql: "SELECT sum(sin(i)) FROM range(150000000) t(i)".into(),
+        snapshot: false,
+    };
+    let notify = |statement: LoggedStatement| {
+        if statement.sql.contains("sum(sin(i))") {
+            // Receiving this statement before dispatch finishes allows us to interrupt it.
+            if let Some((_, handle)) = s.engine.active.lock().unwrap().as_ref() {
+                handle.interrupt();
+            }
+        }
+    };
+    let report = s.engine.execute(run, "live".into(), true, Some(&notify))?;
+    assert!(report["error"]
+        .as_str()
+        .unwrap()
+        .to_lowercase()
+        .contains("interrupt"));
+    assert!(report["elapsedMs"].as_f64().unwrap() > 0.0);
+    let sql = report["queries"].as_array().unwrap();
+    assert!(sql
+        .iter()
+        .any(|q| q["sql"].as_str().unwrap().contains("sum(sin(i))")));
+    assert!(sql
+        .iter()
+        .all(|q| !q["sql"].as_str().unwrap().contains("FROM duckdb_logs")));
     Ok(())
 }
 

@@ -5,11 +5,14 @@ import { IconSettings } from '../common/icons';
 import { RowHeightPicker } from '../grid/RowHeightPicker';
 import { useUi } from '../../store/ui';
 
+import { useDiagnostics } from '../../store/diagnostics';
+
 export function WorkspaceSettings() {
   const t = useMessages();
   const lang = useLang();
   const rowHeight = useUi((s) => s.rowHeight);
   const setRowHeight = useUi((s) => s.setRowHeight);
+  const diagnostics = useDiagnostics((s) => s.enabled);
   const dialog = useRef<HTMLDialogElement>(null);
   return (
     <>
@@ -42,6 +45,10 @@ export function WorkspaceSettings() {
           </select>
         </label>
         <RowHeightPicker value={rowHeight} onChange={setRowHeight} />
+        <label className="workspace-setting">
+          {t.diagnostics.setting}
+          <input type="checkbox" checked={diagnostics} onChange={(e) => useDiagnostics.getState().setEnabled(e.target.checked)} />
+        </label>
         <details>
           <summary>{t.changelog.title}</summary>
           <div className="changelog-entry">
