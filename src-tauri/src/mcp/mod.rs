@@ -1,4 +1,7 @@
+mod cache;
 mod query;
+pub(crate) mod settings;
+pub(crate) use cache::clean_stale;
 
 use crate::{ledger, notebooks, Database, Engine};
 use anyhow::{ensure, Context, Result};
@@ -42,6 +45,7 @@ struct Workspace {
     engine: Arc<Engine>,
     emit: Box<EventSink>,
     files: Mutex<query::Files>,
+    cache: Arc<cache::Cache>,
     query_slot: Arc<Semaphore>,
     edits: Mutex<HashMap<String, PendingEdit>>,
     stop: CancellationToken,
@@ -71,6 +75,39 @@ impl Workspace {
             "error": result.as_ref().err().map(ToString::to_string)
         }));
         result
+    }
+
+    fn save_ai_snapshot(&self, args: SnapshotArgs) -> Result<Value> {
+        let file = self.result(&args.result_id)?;
+        let access = self.cache.access()?;
+        let (snap, ds) = self.db(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            let columns = file
+                .dataset
+                .columns
+                .iter()
+                .map(|c| c.name.clone())
+                .collect();
+            let snap = ledger::snapshot_in_transaction(
+                &tx,
+                &file.dataset,
+                Default::default(),
+                vec![],
+                columns,
+                file.sql.clone(),
+                ledger::SnapshotTarget::Ai {
+                    name: args.name,
+                    replace_id: args.replace_id,
+                },
+            )?;
+            let ds = ledger::dataset(&tx, &snap.id)?;
+            self.check_enabled()?;
+            tx.commit()?;
+            Ok((snap, ds))
+        })?;
+        drop(access);
+        (self.emit)(json!({"type":"snapshot","snapshot":snap,"dataset":ds,"focus":args.focus}))?;
+        Ok(json!({"id":snap.id,"name":snap.display_name,"total":snap.row_count}))
     }
 
     fn result(&self, id: &str) -> Result<Arc<query::ResultFile>> {
@@ -212,41 +249,7 @@ impl Tools {
     )]
     async fn save_snapshot(&self, Parameters(args): Parameters<SnapshotArgs>) -> CallToolResult {
         let core = self.0.clone();
-        reply(
-            blocking(move || {
-                let file = core.result(&args.result_id)?;
-                let (snap, ds) = core.db(|conn| {
-                    let tx = conn.unchecked_transaction()?;
-                    let columns = file
-                        .dataset
-                        .columns
-                        .iter()
-                        .map(|c| c.name.clone())
-                        .collect();
-                    let snap = ledger::snapshot_in_transaction(
-                        &tx,
-                        &file.dataset,
-                        Default::default(),
-                        vec![],
-                        columns,
-                        file.sql.clone(),
-                        ledger::SnapshotTarget::Ai {
-                            name: args.name,
-                            replace_id: args.replace_id,
-                        },
-                    )?;
-                    let ds = ledger::dataset(&tx, &snap.id)?;
-                    core.check_enabled()?;
-                    tx.commit()?;
-                    Ok((snap, ds))
-                })?;
-                (core.emit)(
-                    json!({"type":"snapshot","snapshot":snap,"dataset":ds,"focus":args.focus}),
-                )?;
-                Ok(json!({"id":snap.id,"name":snap.display_name,"total":snap.row_count}))
-            })
-            .await,
-        )
+        reply(blocking(move || core.save_ai_snapshot(args)).await)
     }
 
     #[tool(
@@ -341,88 +344,57 @@ impl Tools {
 )]
 impl ServerHandler for Tools {}
 
-#[derive(Clone, Serialize)]
-pub(crate) struct Info {
-    url: String,
-    token: String,
-}
 struct Running {
-    info: Info,
+    url: String,
+    token: Arc<Mutex<String>>,
     core: Arc<Workspace>,
     server: tokio::task::JoinHandle<std::io::Result<()>>,
 }
 #[derive(Default)]
 pub(crate) struct Control(tokio::sync::Mutex<Option<Running>>);
 
-#[tauri::command]
-pub(crate) async fn mcp_info(state: State<'_, Control>) -> Result<Option<Info>, String> {
-    Ok(state.0.lock().await.as_ref().map(|r| r.info.clone()))
-}
-#[tauri::command]
-pub(crate) async fn mcp_set_enabled(
-    enabled: bool,
-    app: AppHandle,
-    database: State<'_, Database>,
-    state: State<'_, Control>,
-) -> Result<Option<Info>, String> {
-    let mut running = state.0.lock().await;
-    if !enabled {
-        if let Some(previous) = running.take() {
-            previous.core.stop.cancel();
-            previous.server.abort();
-            let _ = previous.server.await;
-        }
-        return Ok(None);
-    }
-    if let Some(r) = running.as_ref() {
-        return Ok(Some(r.info.clone()));
-    }
-    let engine = database.0.clone()?;
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 18476))
-        .await
-        .map_err(|e| e.to_string())?;
-    let address = listener.local_addr().map_err(|e| e.to_string())?;
-    let token = Uuid::new_v4().simple().to_string();
-    let info = Info {
-        url: format!("http://{address}/mcp"),
-        token: token.clone(),
-    };
-    let core = Arc::new(Workspace {
-        engine,
-        emit: Box::new(move |event| {
-            let show = event["type"] == "preview"
-                || (event["type"] == "snapshot" && event["focus"] == true);
-            app.emit_to("main", "mcp-workspace", event)?;
-            if show {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.unminimize();
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            }
-            Ok(())
-        }),
-        files: Default::default(),
-        query_slot: Arc::new(Semaphore::new(1)),
-        edits: Default::default(),
-        stop: CancellationToken::new(),
-    });
-    let router = router(core.clone(), address.to_string(), token);
-    let stop = core.stop.clone();
-    let server = tokio::spawn(async move {
-        axum::serve(listener, router)
-            .with_graceful_shutdown(stop.cancelled_owned())
-            .await
-    });
-    *running = Some(Running {
-        info: info.clone(),
-        core,
-        server,
-    });
-    Ok(Some(info))
+pub(crate) fn cache_root(app: &AppHandle) -> Result<std::path::PathBuf> {
+    Ok(app.path().app_cache_dir()?.join("mcp-temp-v1"))
 }
 
-fn router(core: Arc<Workspace>, host: String, token: String) -> Router {
+async fn stop(running: &mut Option<Running>) -> Result<()> {
+    if let Some(previous) = running.take() {
+        previous.core.stop.cancel();
+        previous.server.abort();
+        let _ = previous.server.await;
+        tokio::task::spawn_blocking(move || previous.core.cache.close()).await??;
+    }
+    Ok(())
+}
+
+impl Control {
+    async fn snapshot_preview(&self, result_id: String) -> Result<Value> {
+        let core = self
+            .0
+            .lock()
+            .await
+            .as_ref()
+            .context("MCP is disabled")?
+            .core
+            .clone();
+        blocking(move || {
+            core.save_ai_snapshot(SnapshotArgs {
+                result_id,
+                name: format!("AI_{}", &Uuid::new_v4().simple().to_string()[..8]),
+                replace_id: None,
+                focus: false,
+            })
+        })
+        .await
+    }
+
+    pub(crate) async fn shutdown(&self) -> Result<()> {
+        let mut running = self.0.lock().await;
+        stop(&mut running).await
+    }
+}
+
+fn router(core: Arc<Workspace>, host: String, token: Arc<Mutex<String>>) -> Router {
     let config = StreamableHttpServerConfig::default()
         .with_allowed_hosts([host])
         .enforce_origin_validation()
@@ -434,14 +406,14 @@ fn router(core: Arc<Workspace>, host: String, token: String) -> Router {
         Arc::new(LocalSessionManager::default()),
         config,
     );
-    let bearer = format!("Bearer {token}");
     Router::new()
         .nest_service("/mcp", service)
         .layer(middleware::from_fn(move |req: Request, next: Next| {
             let authorized = req
                 .headers()
                 .get(header::AUTHORIZATION)
-                .is_some_and(|h| h.as_bytes() == bearer.as_bytes());
+                .and_then(|h| h.as_bytes().strip_prefix(b"Bearer "))
+                .is_some_and(|value| value == token.lock().unwrap().as_bytes());
             async move {
                 if authorized {
                     Ok::<Response, StatusCode>(next.run(req).await)
@@ -450,6 +422,17 @@ fn router(core: Arc<Workspace>, host: String, token: String) -> Router {
                 }
             }
         }))
+}
+
+#[tauri::command]
+pub(crate) async fn mcp_snapshot_preview(
+    result_id: String,
+    state: State<'_, Control>,
+) -> Result<Value, String> {
+    state
+        .snapshot_preview(result_id)
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]

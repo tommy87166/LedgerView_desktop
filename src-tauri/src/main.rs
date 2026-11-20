@@ -135,6 +135,7 @@ impl Engine {
             Err(_) => (Connection::open_in_memory()?, false),
         };
         ledger::init(&conn)?;
+        mcp::settings::init(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
             active: Mutex::new(None),
@@ -369,12 +370,29 @@ fn cancel_query(database: State<'_, Database>, token: String) {
     }
 }
 
+#[tauri::command]
+async fn open_workspace_directory(app: tauri::AppHandle) -> Result<(), String> {
+    let directory = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        fs::create_dir_all(&directory)?;
+        open::that(directory)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(mcp::Control::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
+            if let Err(error) =
+                mcp::cache_root(app.handle()).and_then(|root| mcp::clean_stale(&root))
+            {
+                eprintln!("Cleaning previous MCP cache: {error:#}");
+            }
             let engine = app
                 .path()
                 .app_data_dir()
@@ -388,14 +406,27 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             ledger_request,
             cancel_query,
-            mcp::mcp_info,
-            mcp::mcp_set_enabled,
+            open_workspace_directory,
+            mcp::settings::mcp_info,
+            mcp::settings::mcp_set_port,
+            mcp::settings::mcp_set_enabled,
+            mcp::settings::mcp_regenerate_token,
+            mcp::settings::mcp_copy_connection,
             mcp::mcp_page,
+            mcp::mcp_snapshot_preview,
             mcp::mcp_claim_edit,
             mcp::mcp_edit_reply
         ])
-        .run(tauri::generate_context!())
-        .expect("Starting LedgerView");
+        .build(tauri::generate_context!())
+        .expect("Starting LedgerView")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                let state = app.state::<mcp::Control>();
+                if let Err(error) = tauri::async_runtime::block_on(state.shutdown()) {
+                    eprintln!("Cleaning MCP cache on exit: {error:#}");
+                }
+            }
+        });
 }
 
 #[cfg(test)]

@@ -10,6 +10,7 @@ pub(super) struct ResultFile {
     pub dataset: Dataset,
     pub sql: String,
     _directory: TempDir,
+    cache: Arc<cache::Cache>,
 }
 
 #[derive(Default)]
@@ -27,16 +28,16 @@ impl Files {
             .context("Query result expired. Run the query again")
     }
 
-    fn sources(&mut self, conn: &Connection) -> Result<Vec<(String, PathBuf)>> {
+    fn sources(&mut self, conn: &Connection, cache: &Path) -> Result<Vec<(String, PathBuf)>> {
         let sources = crate::notebooks::sources(conn)?;
         self.snapshots
             .retain(|id, _| sources.iter().any(|(_, d)| &d.id == id));
         let mut paths = vec![];
         for (name, ds) in sources {
             let path = if ds.ephemeral {
-                let cache = self.snapshots.get(&ds.id);
-                if !cache.is_some_and(|(version, _, _)| version == &ds.imported_at) {
-                    let dir = tempfile::tempdir()?;
+                let snapshot = self.snapshots.get(&ds.id);
+                if !snapshot.is_some_and(|(version, _, _)| version == &ds.imported_at) {
+                    let dir = tempfile::tempdir_in(cache)?;
                     let path = dir.path().join("snapshot.parquet");
                     ledger::export(conn, &ds, &path)?;
                     self.snapshots
@@ -53,7 +54,10 @@ impl Files {
 }
 
 pub(super) fn page(file: &ResultFile, start: u64) -> Result<Value> {
+    let _access = file.cache.access()?;
+    let spill = tempfile::tempdir_in(file._directory.path())?;
     let conn = Connection::open_in_memory()?;
+    conn.execute_batch(&format!("SET temp_directory={}", path_sql(spill.path())?))?;
     let ds = &file.dataset;
     let names = ds
         .columns
@@ -88,7 +92,9 @@ fn path_sql(path: &Path) -> Result<String> {
 
 pub(super) fn run(core: &Workspace, sql: &str) -> Result<Arc<ResultFile>> {
     ensure!(!sql.trim().is_empty(), "Enter a SQL query");
-    let dir = tempfile::tempdir()?;
+    let _access = core.cache.access()?;
+    core.check_enabled()?;
+    let dir = tempfile::tempdir_in(&core.cache.directory)?;
     let output = dunce::canonicalize(dir.path())?.join("result.parquet");
     let sources = {
         let conn = core
@@ -96,7 +102,10 @@ pub(super) fn run(core: &Workspace, sql: &str) -> Result<Arc<ResultFile>> {
             .conn
             .lock()
             .map_err(|_| anyhow::anyhow!("Workspace unavailable"))?;
-        core.files.lock().unwrap().sources(&conn)?
+        core.files
+            .lock()
+            .unwrap()
+            .sources(&conn, &core.cache.directory)?
     };
     let conn = Connection::open_in_memory()?;
     conn.execute_batch(
@@ -104,6 +113,10 @@ pub(super) fn run(core: &Workspace, sql: &str) -> Result<Arc<ResultFile>> {
         SET allow_community_extensions=false; SET threads=2; SET memory_limit='1GB';
         SET max_temp_directory_size='2GB'; LOAD parquet; LOAD json",
     )?;
+    conn.execute_batch(&format!(
+        "SET temp_directory={}",
+        path_sql(&dir.path().join("spill"))?
+    ))?;
     let mut paths = vec![path_sql(&output)?];
     for (name, path) in sources {
         let path = path.to_str().context("Invalid file path")?;
@@ -153,6 +166,7 @@ pub(super) fn run(core: &Workspace, sql: &str) -> Result<Arc<ResultFile>> {
         dataset,
         sql: sql.into(),
         _directory: dir,
+        cache: core.cache.clone(),
     });
     let mut files = core.files.lock().unwrap();
     files.results.push_front(file.clone());

@@ -5,6 +5,7 @@ use tempfile::TempDir;
 
 struct Server {
     url: String,
+    control: Control,
     client: Client,
     core: Arc<Workspace>,
     events: Arc<Mutex<Vec<Value>>>,
@@ -18,6 +19,7 @@ impl Server {
         let events = Arc::new(Mutex::new(Vec::new()));
         let out = events.clone();
         let core = Arc::new(Workspace {
+            cache: Arc::new(cache::Cache::open(&dir.path().join("cache"))?),
             engine,
             emit: Box::new(move |e| {
                 out.lock().unwrap().push(e);
@@ -30,15 +32,24 @@ impl Server {
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let host = listener.local_addr()?.to_string();
-        let router = router(core.clone(), host.clone(), "test-token".into());
+        let token = Arc::new(Mutex::new("test-token".to_owned()));
+        let router = router(core.clone(), host.clone(), token.clone());
         let stop = core.stop.clone();
-        tokio::spawn(async move {
+        let server = tokio::spawn(async move {
             axum::serve(listener, router)
                 .with_graceful_shutdown(stop.cancelled_owned())
                 .await
         });
+        let url = format!("http://{host}/mcp");
+        let running = Running {
+            url: url.clone(),
+            token,
+            core: core.clone(),
+            server,
+        };
         Ok(Self {
-            url: format!("http://{host}/mcp"),
+            url,
+            control: Control(tokio::sync::Mutex::new(Some(running))),
             client: Client::new(),
             core,
             events,
@@ -188,6 +199,98 @@ async fn queries_preview_page_and_replace_only_ai_snapshots() -> Result<()> {
     assert!(events.iter().any(|e| e["type"] == "snapshot"
         && e["focus"] == true
         && e["snapshot"]["aiCreated"] == true));
+    Ok(())
+}
+
+#[tokio::test]
+async fn preview_button_saves_all_rows_and_mcp_can_replace_the_same_snapshot() -> Result<()> {
+    let s = Server::new().await?;
+    let preview = s
+        .call(
+            "query",
+            json!({"sql":"SELECT i FROM range(236) AS r(i)", "preview":true}),
+        )
+        .await?;
+    let snapshot = s
+        .control
+        .snapshot_preview(preview["resultId"].as_str().unwrap().into())
+        .await?;
+    assert_eq!(snapshot["total"], 236);
+    assert!(s
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|event| event["type"] == "snapshot"
+            && event["snapshot"]["id"] == snapshot["id"]
+            && event["snapshot"]["aiCreated"] == true
+            && event["focus"] == false));
+    let replacement = s
+        .call("query", json!({"sql":"SELECT 42 AS answer"}))
+        .await?;
+    let updated = s
+        .call(
+            "save_snapshot",
+            json!({
+                "resultId":replacement["resultId"],"name":"Revised","replaceId":snapshot["id"]
+            }),
+        )
+        .await?;
+    assert_eq!(updated["id"], snapshot["id"]);
+    assert_eq!(updated["total"], 1);
+    let sources = s.call("list_sources", json!({})).await?;
+    let source = sources["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|source| source["id"] == snapshot["id"])
+        .unwrap();
+    let sql = format!(
+        "SELECT answer FROM {}",
+        ledger::ident(source["name"].as_str().unwrap())
+    );
+    let rows = s.call("query", json!({"sql":sql})).await?;
+    assert_eq!(rows["rows"], json!([["42"]]));
+    Ok(())
+}
+
+#[tokio::test]
+async fn shutdown_removes_results_and_snapshot_copies_and_preserves_workspace() -> Result<()> {
+    let s = Server::new().await?;
+    s.file("source.parquet")?;
+    let result = s
+        .call("query", json!({"sql":"SELECT n FROM source"}))
+        .await?;
+    let file = s.core.result(result["resultId"].as_str().unwrap())?;
+    let snap = s
+        .call(
+            "save_snapshot",
+            json!({"resultId":result["resultId"],"name":"saved"}),
+        )
+        .await?;
+    let view = s
+        .call("query", json!({"sql":"SELECT count(*) FROM saved"}))
+        .await?;
+    assert_eq!(view["rows"], json!([["125"]]));
+    let cache = &s.core.cache.directory;
+    assert!(
+        dunce::canonicalize(&file.dataset.source_file)?.starts_with(dunce::canonicalize(cache)?)
+    );
+    assert!(Path::new(&file.dataset.source_file).is_file());
+    let children = std::fs::read_dir(cache)?.collect::<std::io::Result<Vec<_>>>()?;
+    assert!(children
+        .iter()
+        .any(|d| d.path().join("snapshot.parquet").is_file()));
+
+    s.control.shutdown().await?;
+    assert!(!cache.exists());
+    assert!(query::page(&file, 0).is_err());
+    assert!(s._dir.path().join("source.parquet").is_file());
+    let conn = s.core.engine.conn.lock().unwrap();
+    assert_eq!(
+        ledger::dataset(&conn, snap["id"].as_str().unwrap())?.row_count,
+        125
+    );
     Ok(())
 }
 

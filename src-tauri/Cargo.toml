@@ -25,6 +25,7 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 tokio = { version = "1", features = ["net", "sync", "time"] }
 tokio-util = "0.7"
 schemars = "1"
+open = "5"
 
 [profile.dev]
 debug = 0

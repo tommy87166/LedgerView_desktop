@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { useLang, useMessages } from '../../i18n';
 import { useDiagnostics, type DiagnosticEntry, type DiagnosticStatement } from '../../store/diagnostics';
 
+import { HeightResizer } from '../common/HeightResizer';
+
+const minHeight = 86;
+
 function duration(ms: number) {
   return ms < 1000 ? Math.round(Math.max(ms, 0)) + ' ms' : (ms / 1000).toFixed(1) + ' s';
 }
@@ -53,6 +57,16 @@ function LogPanel() {
   const entries = useDiagnostics(s => s.entries);
   const t = useMessages().diagnostics;
   const [expanded, setExpanded] = useState(true);
+  const [customHeight, setCustomHeight] = useState<number>();
+  const [viewport, setViewport] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const onResize = () => setViewport(window.innerHeight);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const maxHeight = Math.max(minHeight, viewport - 140);
+  const defaultHeight = Math.max(minHeight, Math.min(238, Math.round(viewport * 0.23)));
+  const height = Math.min(customHeight ?? defaultHeight, maxHeight);
   const [now, setNow] = useState(Date.now);
   const runningToken = entries.find(e => e.elapsedMs === undefined)?.token;
   useEffect(() => {
@@ -62,6 +76,8 @@ function LogPanel() {
     return () => clearInterval(timer);
   }, [runningToken, expanded]);
   return <section className="diag-panel" aria-label={t.title}>
+    {expanded && <HeightResizer controls="diag-content" label={t.resize} edge="top"
+      height={height} min={minHeight} max={maxHeight} onResize={setCustomHeight} />}
     <button className="diag-toggle" type="button" aria-controls="diag-content" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
       <svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.45">
         <rect x="2" y="3.5" width="16" height="13" rx="2" /><path d="m5 7 3 3-3 3m5 0h4"/>
@@ -70,7 +86,7 @@ function LogPanel() {
       {entries.length > 0 && <span className="diag-count">{entries.length}</span>}
       <span className={'diag-fold' + (expanded ? ' up' : '')}><Chevron down /></span>
     </button>
-    <div id="diag-content" hidden={!expanded}>
+    <div id="diag-content" hidden={!expanded} style={{ height }}>
       {entries.length === 0 ? <p className="diag-empty">{t.empty}</p> : <>
         <div className="diag-head"><span>{t.time}</span><span>{t.status}</span><span>{t.duration}</span><span>SQL</span></div>
         <ol className="diag-entries">{entries.map(entry => <LogEntry key={entry.token} entry={entry} now={now} />)}</ol>

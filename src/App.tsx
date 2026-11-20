@@ -45,22 +45,21 @@ export function App() {
 
   return (
     <>
-      {dbError ? (
-        <div className="center-screen">
-          <p>{t.app.dbInitFailed}</p>
-          <pre>{dbError}</pre>
+      <div className="workspace-window">
+        <div className="workspace-main">
+          {dbError ? (
+            <div className="center-screen">
+              <p>{t.app.dbInitFailed}</p>
+              <pre>{dbError}</pre>
+            </div>
+          ) : !dbReady ? (
+            <div className="center-screen">{t.app.initializing}</div>
+          ) : <AppShell />}
+          <ActivityOverlay />
         </div>
-      ) : !dbReady ? (
-        <div className="center-screen">{t.app.initializing}</div>
-      ) : (
-        <div className="workspace-window">
-          <AppShell />
-          <DiagnosticLog />
-          <McpWorkspace />
-        </div>
-      )}
+        {dbReady && !dbError && <><DiagnosticLog /><McpWorkspace /></>}
+      </div>
       <Toasts />
-      <ActivityOverlay />
     </>
   );
 }

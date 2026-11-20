@@ -1,96 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 import { QueryTable } from '../common/QueryTable';
+import { IconSnapshot } from '../common/icons';
 import { listen } from '@tauri-apps/api/event';
-import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { useMessages } from '../../i18n';
 import { applyAiNotebook, type AiCellEdit } from '../../store/notebooks';
 import { useDiagnostics } from '../../store/diagnostics';
 import { useDatasets } from '../../store/datasets';
 import { useSnapshots } from '../../store/snapshots';
-import { useUi } from '../../store/ui';
 import type { ColumnMeta, DatasetMeta } from '../../types/dataset';
 import type { StoredNotebook } from '../../types/notebook';
 import type { SnapshotMeta } from '../../types/snapshot';
-
-interface Info {
-  url: string;
-  token: string;
-}
-export function McpSettings() {
-  const t = useMessages().mcp;
-  const [info, setInfo] = useState<Info | null>(null);
-  const [pending, setPending] = useState(true);
-  const [error, setError] = useState('');
-  const report = (err: unknown) => setError(String(err));
-  useEffect(() => {
-    if (!isTauri()) return;
-    let live = true;
-    invoke<Info | null>('mcp_info')
-      .then((v) => {
-        if (live) setInfo(v);
-      })
-      .catch((err) => {
-        if (live) report(err);
-      })
-      .finally(() => {
-        if (live) setPending(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
-  const toggle = async (enabled: boolean) => {
-    setPending(true);
-    setError('');
-    try {
-      setInfo(await invoke<Info | null>('mcp_set_enabled', { enabled }));
-    } catch (err) {
-      report(err);
-    } finally {
-      setPending(false);
-    }
-  };
-  return (
-    <>
-      <label className="workspace-setting">
-        {t.enable}
-        <input
-          type="checkbox"
-          checked={!!info}
-          disabled={pending}
-          onChange={(e) => void toggle(e.target.checked)}
-        />
-      </label>
-      {info && (
-        <div className="mcp-connection">
-          <code>{info.url}</code>
-          <button
-            className="btn"
-            onClick={() => {
-              void writeText(
-                JSON.stringify(
-                  { url: info.url, headers: { Authorization: 'Bearer ' + info.token } },
-                  null,
-                  2,
-                ),
-              )
-                .then(() => useUi.getState().toast('success', t.copied))
-                .catch(report);
-            }}
-          >
-            {t.copy}
-          </button>
-        </div>
-      )}
-      {error && (
-        <p className="sql-error" role="alert">
-          {error}
-        </p>
-      )}
-    </>
-  );
-}
 
 type McpEvent =
   | { type: 'begin'; token: string; sql: string }
@@ -118,6 +38,8 @@ export function McpWorkspace() {
   const [offsets, setOffsets] = useState([0]);
   const [page, setPage] = useState<Page | null>(null);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<{ id: string; text: string; failed: boolean } | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     let live = true;
@@ -135,6 +57,7 @@ export function McpWorkspace() {
             .finish(e.token, e.elapsedMs, [{ sql: e.sql }], e.error ?? undefined);
           break;
         case 'preview':
+          setNotice(null);
           setOffsets([0]);
           setPreview(e.resultId);
           break;
@@ -194,6 +117,20 @@ export function McpWorkspace() {
       live = false;
     };
   }, [preview, start]);
+
+  const saveSnapshot = async () => {
+    if (!preview || saving) return;
+    setSaving(true);
+    setNotice(null);
+    try {
+      const saved = await invoke<{ name: string; total: number }>('mcp_snapshot_preview', { resultId: preview });
+      setNotice({ id: preview, text: t.snapshot.created(saved.name, saved.total.toLocaleString()), failed: false });
+    } catch (e) {
+      setNotice({ id: preview, text: t.snapshot.createFailed(String(e)), failed: true });
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <dialog
       className="settings-dialog mcp-preview"
@@ -217,25 +154,33 @@ export function McpWorkspace() {
         <>
           <QueryTable label={t.mcp.preview} columns={page.columns} rows={page.rows} start={start} />
           <footer>
-            <span>
-              {page.total.toLocaleString()} {t.notebook.rows}
-            </span>
-            <button
-              className="btn"
-              disabled={offsets.length === 1}
-              onClick={() => setOffsets(offsets.slice(0, -1))}
-            >
-              {t.notebook.prev}
-            </button>
-            <button
-              className="btn"
-              disabled={page.next === null}
-              onClick={() => {
-                if (page.next !== null) setOffsets([...offsets, page.next]);
-              }}
-            >
-              {t.notebook.next}
-            </button>
+            <div className="mcp-snapshot-action">
+              <button className="btn icon-btn" disabled={saving} onClick={() => void saveSnapshot()}>
+                <IconSnapshot />{saving ? t.notebook.saving : t.topbar.createSnapshot}
+              </button>
+              {notice && notice.id === preview && <span role={notice.failed ? 'alert' : 'status'}>{notice.text}</span>}
+            </div>
+            <div className="mcp-preview-pages">
+              <span>
+                {page.total.toLocaleString()} {t.notebook.rows}
+              </span>
+              <button
+                className="btn"
+                disabled={offsets.length === 1}
+                onClick={() => setOffsets(offsets.slice(0, -1))}
+              >
+                {t.notebook.prev}
+              </button>
+              <button
+                className="btn"
+                disabled={page.next === null}
+                onClick={() => {
+                  if (page.next !== null) setOffsets([...offsets, page.next]);
+                }}
+              >
+                {t.notebook.next}
+              </button>
+            </div>
           </footer>
         </>
       ) : (

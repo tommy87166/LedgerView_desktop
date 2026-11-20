@@ -61,20 +61,22 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 ## 從 AI 操作 LedgerView
 
-開啟 LedgerView，在左下角 **設定 → 啟用本機 MCP** 勾選後，按 **複製連線設定**。把 URL 和授權標頭填入支援 Streamable HTTP 的 MCP 用戶端。服務位於 `http://127.0.0.1:18476/mcp`，每次重新啟用都會產生新的權杖。關閉服務或退出程式即中止連線。[MCP 傳輸規格](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
+在左下角的 **設定 → MCP** 開啟服務，按 **複製連線設定** 即可取得用戶端需要的 URL 和 Bearer 授權標頭。預設連線網址為 `http://127.0.0.1:18476/mcp`。關閉 MCP 時可修改連接埠並按「儲存」，留白可恢復預設值。
+
+磁碟工作區會將連接埠及權杖存入 `ledger.duckdb`。首次成功啟用時會顯示完整權杖，關閉設定後即隱藏。重開 LedgerView 後，啟用 MCP 即可沿用原設定。按「重新產生」會顯示新權杖並立即撤銷舊權杖。記憶體模式使用預設連接埠，權杖僅保留至程式退出。[MCP 傳輸規格](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
 
 啟用期間，連線的 AI 可查詢整個工作區的來源和快照、讀取及編輯所有筆記本。在設定中打開診斷日誌，可看到標示為 MCP 的 SQL、耗時及錯誤。
 
 | 工具 | 行為 |
 | --- | --- |
 | `list_sources` | 列出資料表別名、欄位名稱及型別。 |
-| `query` | 執行一段唯讀 DuckDB SQL。預設將第一頁回傳給 AI；設 `preview: true` 會在桌面開啟預覽，AI 收到結果 ID 和列數。 |
+| `query` | 執行一段唯讀 DuckDB SQL。預設將第一頁回傳給 AI。設 `preview: true` 會開啟全螢幕「預覽」，AI 收到結果 ID 和列數。使用者可在左下角按「快照」保存完整結果，之後 AI 可用 `save_snapshot` 的 `replaceId` 覆寫同一份快照。 |
 | `result_page` | 使用前一頁的 `next` 取得後續資料。每頁最多 100 列，資料列內容最多 512 KiB。 |
 | `save_snapshot` | 使用結果 ID 保存完整結果。傳 `focus: true` 可切換到該快照。之後指定同一個 `replaceId`，可整份更新 AI 建立的快照。 |
 | `list_notebooks` | 讀取筆記本、區塊名稱、SQL 與編輯版本。 |
 | `edit_notebook` | 建立筆記本，或依 `expectedRevision` 編輯現有筆記本的名稱、區塊與 SQL。既有區塊保留 slot，新區塊省略 slot。若使用者已修改，工具會回報衝突。 |
 
-MCP 查詢使用獨立的 DuckDB 實例，直接讀取已開啟的原始 Parquet。工作區快照以本次連線的暫存 Parquet 提供給查詢。SQL 執行上限 60 秒，最近八份成功結果可供翻頁、預覽與建立快照。關閉 MCP 後清除暫存結果；已存快照及筆記本依工作區模式保存。
+MCP 查詢使用獨立的 DuckDB 實例，直接讀取已開啟的原始 Parquet。工作區快照以本次連線的暫存 Parquet 提供給查詢。SQL 執行上限 60 秒，最近八份成功結果可供翻頁、預覽與建立快照。關閉 MCP 或退出 LedgerView 時會清除 MCP 專用快取目錄裡的查詢結果及快照副本。若程式意外中斷，下次啟動會清除上次遺留的快取。已存快照及筆記本依工作區模式保存。在設定中按「開啟工作目錄」可前往保存 `ledger.duckdb` 的資料夾。
 
 ## 大檔驗證
 

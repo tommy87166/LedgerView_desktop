@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { acceptCompletion, autocompletion } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { bracketMatching, HighlightStyle, syntaxHighlighting } from '@codemirror/language';
@@ -11,11 +11,14 @@ import {
 } from '@codemirror/state';
 import { EditorView, keymap, placeholder, tooltips } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
+import { useMessages } from '../../i18n';
+import { HeightResizer } from '../common/HeightResizer';
 import { quoteSqlName } from '../../lib/notebookSql';
 import type { NotebookSource } from '../../types/notebook';
 import { NotebookSourcePicker } from './NotebookSourcePicker';
 
 const fromProps = Annotation.define<boolean>();
+const minEditorHeight = 76;
 const languageConfig = new Compartment();
 const labelsConfig = new Compartment();
 const sqlHighlight = HighlightStyle.define([
@@ -53,6 +56,9 @@ interface Props {
 }
 
 export function SqlEditor(props: Props) {
+  const t = useMessages().notebook;
+  const editorId = useId();
+  const [height, setHeight] = useState(84);
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const latest = useRef(props);
@@ -137,7 +143,12 @@ export function SqlEditor(props: Props) {
 
   return (
     <>
-      <div className="sql-editor" ref={host} />
+      <div className="sql-editor" style={{ height }}>
+        <div id={editorId} className="sql-editor-host" ref={host} />
+        <HeightResizer controls={editorId} label={t.resizeEditor} edge="bottom"
+          height={height} min={minEditorHeight} onResize={setHeight}
+        />
+      </div>
       {props.sources.length > 0 && (
         <NotebookSourcePicker sources={props.sources} onPick={insertTable} />
       )}

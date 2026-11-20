@@ -68,6 +68,14 @@ export function IconSnapshot({ size = 15, ...props }: IconProps) {
   );
 }
 
+export function IconLink({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)} aria-hidden="true">
+      <path d="m10 14 4-4m-5 6-1 1a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0m0 8a3.5 3.5 0 0 0 5 0l4-4a3.5 3.5 0 0 0-5-5l-1 1" />
+    </svg>
+  );
+}
+
 export function IconSettings({ size = 17, ...props }: IconProps) {
   return (
     <svg {...base(size, props)} aria-hidden="true">
