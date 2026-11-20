@@ -71,7 +71,7 @@ jobs:
         run: |
           app="src-tauri/target/${{ matrix.target }}/release/bundle/macos/LedgerView.app"
           test -x "$app/Contents/MacOS/LedgerView"
-          lipo -verify_arch arm64 "$app/Contents/MacOS/LedgerView"
+          lipo "$app/Contents/MacOS/LedgerView" -verify_arch arm64
           codesign --verify --deep --strict "$app"
           ditto -c -k --sequesterRsrc --keepParent "$app" "${{ matrix.artifact }}"
       - name: Upload the tested build
