@@ -2,6 +2,8 @@
 
 LedgerView 的桌面版。使用者可在本機開啟大型 Parquet 檔、瀏覽資料並依欄位篩選。支援 Streamable HTTP 的本機 MCP client 也可對使用者授權的資料集執行 SQL。[LedgerView Web 版](https://github.com/tommy87166/LedgerView)
 
+[LedgerView Web 版功能盤點](docs/ledgerview-web-features.md) 記錄既有的跨檔查帳、快照與底稿輸出流程，供桌面版功能討論時對照。
+
 ## 技術選型
 
 | 層級 | 選型 |
