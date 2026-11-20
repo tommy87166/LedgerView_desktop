@@ -1,0 +1,873 @@
+/* 品牌設計系統：白底、黑字、細灰框、橘色（#FD5108）只用於 CTA/active/focus，
+   hover 用純黑反白，扁平極簡、高資訊密度。 */
+:root {
+  /* 品牌 / 語意色 */
+  --lv-bg: #ffffff; /* 主背景 */
+  --lv-panel: #ffffff;
+  --lv-muted-bg: #f5f7f8; /* Grey 50 - 區塊/工具列淺灰底 */
+  --lv-border: #dfe3e6; /* Grey 200 - 邊框/分隔線 */
+  --lv-input: #cbd1d6; /* Grey 300 - 輸入框邊框 */
+  --lv-row-border: #e8eaed; /* 表格列分隔線 */
+  --lv-text: #000000; /* 主文字 */
+  --lv-muted: #a1a8b3; /* Grey 500 - 次要文字/placeholder/未選取 */
+  --lv-primary: #fd5108; /* Orange 500 - CTA/active/focus */
+  --lv-primary-text: #ffffff;
+  --lv-hover-bg: #000000; /* 次要按鈕 hover：黑底白字 */
+  --lv-hover-text: #ffffff;
+  --lv-danger: #dc2626; /* 錯誤/刪除 */
+  --lv-ring: #fd5108;
+  --lv-tint: #fff5ed; /* 橘色淡 tint - hover/highlight */
+  --lv-tint-strong: #ffe8d4; /* 橘色淡 tint - 選取 */
+  /* 既有程式碼引用的別名 */
+  --lv-accent: var(--lv-primary);
+  --lv-accent-text: var(--lv-primary-text);
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+
+  font-family:
+    'IBM Plex Sans',
+    system-ui,
+    -apple-system,
+    'Noto Sans TC',
+    'Microsoft JhengHei',
+    'PingFang TC',
+    sans-serif;
+  font-size: 13px;
+  color: var(--lv-text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--lv-bg);
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--lv-primary);
+}
+
+a {
+  color: var(--lv-primary);
+  cursor: pointer;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--lv-ring);
+  outline-offset: 1px;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--lv-panel);
+  border-bottom: 1px solid var(--lv-border);
+  flex: 0 0 auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.topbar h1 {
+  font-size: 15px;
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* 品牌旁的 Changelog 按鈕（小、低調 chip） */
+.changelog-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  margin-left: 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--lv-border);
+  background: var(--lv-bg);
+  color: var(--lv-muted);
+  cursor: pointer;
+}
+.changelog-btn svg {
+  flex: 0 0 auto;
+}
+.changelog-btn:hover {
+  color: var(--lv-text);
+  border-color: var(--lv-input);
+}
+
+/* 語言切換 chip（緊鄰 Changelog、同高）：單一中／英字符 */
+.lang-chip {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 7px;
+  min-width: 26px;
+  justify-content: center;
+}
+
+/* 帶圖示的按鈕 */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.icon-btn svg {
+  flex: 0 0 auto;
+}
+
+/* 刪除/危險按鈕：hover 變紅底白字 */
+.btn.danger:hover {
+  background: var(--lv-danger);
+  border-color: var(--lv-danger);
+  color: #fff;
+}
+
+/* 狀態徽章 */
+.badge {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--lv-border);
+  color: var(--lv-muted);
+  background: var(--lv-muted-bg);
+  white-space: nowrap;
+}
+
+.badge.persistent {
+  color: #000000;
+  border-color: var(--lv-border);
+  background: var(--lv-muted-bg);
+}
+
+.badge.memory {
+  color: #92400e;
+  border-color: #fcd34d;
+  background: #fef3c7;
+}
+
+/* 按鈕 */
+.btn {
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--lv-input);
+  background: var(--lv-bg);
+  color: var(--lv-text);
+  cursor: pointer;
+  transition:
+    background 0.1s,
+    color 0.1s,
+    border-color 0.1s;
+}
+
+.btn:hover {
+  background: var(--lv-hover-bg);
+  color: var(--lv-hover-text);
+  border-color: var(--lv-hover-bg);
+}
+
+.btn.primary {
+  background: var(--lv-primary);
+  color: var(--lv-primary-text);
+  border-color: var(--lv-primary);
+}
+
+.btn.primary:hover {
+  background: var(--lv-primary);
+  border-color: var(--lv-primary);
+  color: var(--lv-primary-text);
+  opacity: 0.9;
+}
+
+/* active 切換狀態（如快照面板開啟）= 橘色 */
+.btn.active {
+  background: var(--lv-primary);
+  color: var(--lv-primary-text);
+  border-color: var(--lv-primary);
+}
+.btn.active:hover {
+  opacity: 0.9;
+  background: var(--lv-primary);
+  color: var(--lv-primary-text);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn:disabled:hover {
+  background: var(--lv-bg);
+  color: var(--lv-text);
+  border-color: var(--lv-input);
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+/* 扁平底線式分頁 */
+.tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 8px;
+  background: var(--lv-panel);
+  border-bottom: 1px solid var(--lv-border);
+  flex: 0 0 auto;
+  overflow-x: auto;
+}
+
+.tab {
+  font-size: 13px;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  color: var(--lv-muted);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tab:hover:not(.active) {
+  color: var(--lv-text);
+}
+
+.tab.active {
+  color: var(--lv-text);
+  border-bottom-color: var(--lv-primary);
+  font-weight: 600;
+}
+
+.tab .close {
+  font-size: 14px;
+  color: var(--lv-muted);
+  border-radius: var(--radius-sm);
+  padding: 0 3px;
+}
+
+.tab .close:hover {
+  background: var(--lv-hover-bg);
+  color: var(--lv-hover-text);
+}
+
+.content {
+  flex: 1 1 auto;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+}
+
+.grid-wrap {
+  flex: 1 1 auto;
+  height: 100%;
+}
+
+.statusbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 5px 14px;
+  background: var(--lv-muted-bg);
+  border-top: 1px solid var(--lv-border);
+  font-size: 12px;
+  color: var(--lv-muted);
+}
+.statusbar label {
+  color: var(--lv-text);
+}
+.statusbar .btn {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.empty {
+  margin: auto;
+  text-align: center;
+  color: var(--lv-text);
+  max-width: 480px;
+  line-height: 1.7;
+}
+
+.empty p {
+  color: var(--lv-text);
+}
+
+.center-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  color: var(--lv-muted);
+}
+
+/* Toasts：白底 + 左側色條 + 浮層陰影 */
+.toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1000;
+}
+
+.toast {
+  min-width: 240px;
+  max-width: 380px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+  background: var(--lv-bg);
+  color: var(--lv-text);
+  border: 1px solid var(--lv-border);
+  border-left: 4px solid var(--lv-muted);
+  cursor: pointer;
+}
+
+.toast.success {
+  border-left-color: var(--lv-primary);
+}
+
+.toast.error {
+  border-left-color: var(--lv-danger);
+  background: #fef2f2;
+}
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 900;
+}
+
+.modal {
+  background: var(--lv-panel);
+  border: 1px solid var(--lv-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  width: min(880px, 94vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--lv-border);
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 16px 18px;
+  overflow: auto;
+}
+
+.modal-footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--lv-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 更新紀錄內容 */
+.changelog {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.changelog-entry {
+  border-left: 2px solid var(--lv-primary);
+  padding-left: 14px;
+}
+.changelog-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.changelog-version {
+  font-weight: 600;
+  font-size: 14px;
+}
+/* 應用程式自身的輸入框樣式。排除 AG Grid 內部輸入框（.ag-input-field-input）：
+   它們有自己的主題（含左右側圖示與對應的水平內距），若被這裡的 padding 蓋掉
+   （此選擇器 specificity 0,1,1 高於 AG Grid 的 .ag-input-field-input 0,1,0），
+   文字會壓到 AG Grid 的搜尋圖示上。交由 AG Grid 主題接管（focus 用我們的 accentColor）。*/
+select,
+input[type='text']:not(.ag-input-field-input),
+input[type='number']:not(.ag-input-field-input) {
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid var(--lv-input);
+  border-radius: var(--radius-sm);
+  background: var(--lv-bg);
+  color: var(--lv-text);
+}
+
+select:focus,
+input[type='text']:not(.ag-input-field-input):focus,
+input[type='number']:not(.ag-input-field-input):focus {
+  outline: none;
+  border-color: var(--lv-primary);
+  box-shadow: 0 0 0 2px rgba(253, 81, 8, 0.25);
+}
+
+::placeholder {
+  color: var(--lv-muted);
+}
+
+/* 快照面板 */
+.side-panel {
+  flex: 0 0 auto;
+  min-height: 0;
+  position: relative;
+  border-left: 1px solid var(--lv-border);
+  background: var(--lv-panel);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 左緣拖曳調整寬度 */
+.side-panel .resizer {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 5;
+}
+.side-panel .resizer:hover {
+  background: var(--lv-tint-strong);
+}
+
+.side-panel h2 {
+  /* 與 grid 表頭對齊：AG Grid 表頭 = headerHeight 40 + 1px 底邊框 = 41，
+     使兩段表頭的底部分隔線齊平。 */
+  height: 41px;
+  box-sizing: border-box;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--lv-border);
+  background: var(--lv-muted-bg);
+}
+
+.side-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.side-panel-head .close {
+  cursor: pointer;
+  color: var(--lv-muted);
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  font-weight: 400;
+}
+
+.side-panel-head .close:hover {
+  background: var(--lv-hover-bg);
+  color: var(--lv-hover-text);
+}
+
+/* 主內容區（grid 或空狀態），與快照 pane 並排 */
+.main-area {
+  flex: 1 1 auto;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+/* 分頁上的快照徽章 */
+.tab-badge {
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  margin-left: 2px;
+  white-space: nowrap;
+}
+
+.tab-badge.snapshot {
+  background: var(--lv-muted-bg);
+  color: var(--lv-muted);
+  border: 1px solid var(--lv-border);
+}
+
+.snap-list {
+  overflow: auto;
+  flex: 1 1 auto;
+}
+
+.snap-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--lv-border);
+  font-size: 13px;
+}
+
+.snap-item:hover {
+  background: var(--lv-muted-bg);
+}
+
+.snap-name-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--lv-text);
+  cursor: pointer;
+}
+.snap-name-btn:hover {
+  color: var(--lv-primary);
+  text-decoration: underline;
+}
+
+.snap-item .desc {
+  color: var(--lv-muted);
+  font-size: 12px;
+  margin: 3px 0;
+  word-break: break-all;
+}
+
+.snap-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.snap-actions .btn {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.distinct-filter {
+  width: 240px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--lv-bg);
+}
+
+/* 只讓頂部搜尋框佔滿寬度。務必用直接子代「>」：否則會波及清單列裡的 checkbox，
+   把每個 checkbox 撐成整列寬（width:100%），將標籤文字推到右側、甚至擠到換行。 */
+.distinct-filter > input {
+  width: 100%;
+}
+
+.distinct-list {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--lv-border);
+  border-radius: var(--radius-sm);
+}
+
+.distinct-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 13px;
+}
+
+.distinct-row:hover {
+  background: var(--lv-tint);
+}
+
+/* 「全選／取消以下項目（已選 N 個）」列：與下方清單以分隔線區隔 */
+.distinct-master {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid var(--lv-border);
+  font-size: 12px;
+}
+.distinct-master a {
+  color: var(--lv-primary);
+  cursor: pointer;
+}
+.distinct-count {
+  color: var(--lv-muted);
+}
+
+/* 文字欄整合篩選器：外層 + 切換連結 + 文字條件 + 底部按鈕 */
+.text-column-filter {
+  display: flex;
+  flex-direction: column;
+  background: var(--lv-bg);
+}
+
+/* 陣列（剪貼簿）篩選模式 */
+.array-filter {
+  width: 240px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--lv-bg);
+}
+.array-filter .array-error {
+  color: var(--lv-danger);
+}
+.array-filter .btn {
+  align-self: flex-start;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.filter-switch {
+  display: flex;
+  gap: 14px;
+  padding: 6px 8px;
+  font-size: 12px;
+  border-top: 1px solid var(--lv-border);
+}
+.filter-switch a {
+  color: var(--lv-primary);
+  cursor: pointer;
+}
+
+.text-cond {
+  width: 240px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--lv-bg);
+}
+.text-cond select,
+.text-cond > input {
+  width: 100%;
+}
+.text-cond-join {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  align-items: center;
+}
+.text-cond-join label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.filter-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--lv-border);
+}
+.filter-footer .btn {
+  padding: 4px 12px;
+  font-size: 13px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--lv-muted);
+}
+
+/* 列號欄（固定原始序號）：次要色、釘左、右對齊 */
+.ag-cell.lv-rownum {
+  color: var(--lv-muted);
+  background: var(--lv-muted-bg);
+  justify-content: flex-end;
+}
+.ag-header-cell.lv-rownum {
+  color: var(--lv-muted);
+}
+
+/* 工具列「欄位」顯示/隱藏浮層 */
+.col-picker-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.col-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 230px;
+  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+  background: var(--lv-bg);
+  border: 1px solid var(--lv-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  z-index: 1200;
+}
+.col-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--lv-border);
+  font-size: 12px;
+  font-weight: 600;
+}
+.col-picker-actions {
+  display: flex;
+  gap: 8px;
+  font-weight: 400;
+}
+.col-picker-actions button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--lv-primary);
+  cursor: pointer;
+  font-size: 12px;
+}
+.col-picker-list {
+  overflow: auto;
+  padding: 4px 0;
+}
+.col-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.col-picker-item:hover {
+  background: var(--lv-tint);
+}
+
+/* 行距浮層：沿用 col-picker 外觀，較窄；項目為按鈕（重置外觀），目前值高亮 */
+.row-height-picker {
+  width: 150px;
+}
+.rh-item {
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  font: inherit;
+  color: var(--lv-text);
+}
+.rh-item.active {
+  background: var(--lv-tint-strong);
+  font-weight: 600;
+}
+.rh-check {
+  width: 14px;
+  color: var(--lv-primary);
+}
+
+/* Cell 右鍵選單 */
+.cell-menu {
+  position: fixed;
+  min-width: 160px;
+  background: var(--lv-bg);
+  border: 1px solid var(--lv-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  z-index: 1300;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.cell-menu-item {
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cell-menu-item:hover {
+  background: var(--lv-tint);
+}
+
+/* 查詢計時:底部小指示 */
+.query-indicator {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--lv-text);
+  background: var(--lv-bg);
+  border: 1px solid var(--lv-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  z-index: 1050;
+}
+.spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--lv-border);
+  border-top-color: var(--lv-primary);
+  animation: lv-spin 0.7s linear infinite;
+}
+@keyframes lv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 視窗變窄時，工具列／狀態列按鈕收合為僅圖示（隱藏文字 .label），
+   只剩圖示與必要的數量（如快照數）。tooltip 仍提供完整說明。 */
+@media (max-width: 820px) {
+  .topbar .icon-btn .label,
+  .changelog-btn .label,
+  .statusbar .icon-btn .label {
+    display: none;
+  }
+}
