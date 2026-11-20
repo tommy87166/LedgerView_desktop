@@ -10,6 +10,8 @@ import { Toasts } from './components/common/Toasts';
 import { ActivityOverlay } from './components/common/ActivityOverlay';
 import { getMessages, useMessages } from './i18n';
 
+import { McpWorkspace } from './components/layout/McpWorkspace';
+
 export function App() {
   const t = useMessages();
   const dbReady = useUi((s) => s.dbReady);
@@ -54,6 +56,7 @@ export function App() {
         <div className="workspace-window">
           <AppShell />
           <DiagnosticLog />
+          <McpWorkspace />
         </div>
       )}
       <Toasts />

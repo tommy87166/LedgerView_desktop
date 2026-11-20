@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type { Notebook } from '../types/notebook';
 import {
   appendCell,
+  applyAiNotebook,
   deleteCell,
   setOutput,
   updateCell,
@@ -91,6 +92,34 @@ describe('notebook autosave', () => {
     expect(useNotebooks.getState().outputs).toEqual({ 'one/1': { sql: 'SELECT 2' } });
     await flushNotebook(book.id);
     expect(request).toHaveBeenLastCalledWith('saveNotebook', { book: current() });
+  });
+
+  it('rejects an AI edit against a pending local draft', async () => {
+    editNotebook(withSql('SELECT 10'));
+    await expect(applyAiNotebook(book, 'AI', [])).rejects.toThrow('changed');
+    expect(useNotebooks.getState().books[0]).toEqual(withSql('SELECT 10'));
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('creates an AI notebook atomically and leaves the active notebook selected', async () => {
+    selectNotebook(book.id);
+    vi.mocked(request).mockResolvedValueOnce({ id: 'new', name: 'Created', cells: [] });
+    expect(await applyAiNotebook(null, 'Created', [])).toEqual({ id: 'new' });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith('createNotebookDraft', { draft: { name: 'Created', cells: [] } });
+    expect(useNotebooks.getState().activeId).toBe(book.id);
+  });
+
+  it('persists AI notebook edits using stable slots and leaves edited SQL unexecuted', async () => {
+    await applyAiNotebook(book, 'Review', [{ slot: 0, name: 'Total', sql: 'SELECT 7' }, { name: 'Details', sql: 'SELECT 8' }]);
+    const saved = useNotebooks.getState().books[0];
+    expect(saved.cells[0]).toEqual({ slot: 0, name: 'Total', sql: 'SELECT 7' });
+    expect(saved.cells[1].slot).toBeGreaterThan(0);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith('saveNotebook', { book: saved });
+    await expect(applyAiNotebook(saved, 'Review', [saved.cells[0], saved.cells[0]])).rejects.toThrow('repeated');
+    await applyAiNotebook(saved, 'Review', [saved.cells[1]]);
+    expect(useNotebooks.getState().books[0].cells).toEqual([saved.cells[1]]);
   });
 
   it('retains a failed save for retry and treats memory mode as session-only', async () => {

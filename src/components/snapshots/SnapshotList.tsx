@@ -116,7 +116,7 @@ export function SnapshotList({ activeId, onOpenPreview }: Props) {
                 title={`${snap.displayName} · ${t.snapshot.sourcePrefix}${snap.sourceDisplayName} · ${snap.filterDesc || t.snapshot.noFilter} · ${t.snapshot.rows(snap.rowCount.toLocaleString())}`}
               >
                 <IconSnapshot />
-                <span>{snap.displayName}</span>
+                <span>{snap.displayName}</span>{snap.aiCreated && <small>AI</small>}
               </button>
             )}
             <button

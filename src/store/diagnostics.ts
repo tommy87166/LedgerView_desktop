@@ -40,14 +40,14 @@ export const useDiagnostics = create<Diagnostics>((set) => ({
   },
   begin: (entry) => set((s) => s.enabled ? { entries: [entry, ...s.entries.slice(0, 99)] } : s),
   statement: (token, currentStatement) => set((s) => {
-    const entry = s.entries[0];
-    if (entry?.token !== token || entry.elapsedMs !== undefined) return s;
-    return { entries: [{ ...entry, currentStatement }, ...s.entries.slice(1)] };
+    const entry = s.entries.find(e => e.token === token);
+    if (!entry || entry.elapsedMs !== undefined) return s;
+    return { entries: s.entries.map(e => e === entry ? { ...e, currentStatement } : e) };
   }),
   finish: (token, elapsedMs, statements, error) => set((s) => {
-    const entry = s.entries[0];
-    if (entry?.token !== token) return s;
-    if (!entry.sql && !statements.length && error === undefined) return { entries: s.entries.slice(1) };
-    return { entries: [{ ...entry, elapsedMs, statements, error }, ...s.entries.slice(1)] };
+    const entry = s.entries.find(e => e.token === token);
+    if (!entry) return s;
+    if (!entry.sql && !statements.length && error === undefined) return { entries: s.entries.filter(e => e !== entry) };
+    return { entries: s.entries.map(e => e === entry ? { ...e, elapsedMs, statements, error } : e) };
   }),
 }));

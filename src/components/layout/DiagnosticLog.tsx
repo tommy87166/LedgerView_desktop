@@ -32,7 +32,7 @@ function LogEntry({ entry, now }: { entry: DiagnosticEntry; now: number }) {
   return <li className="diag-entry">
     <button type="button" className="diag-row" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
       <time>{new Date(entry.started).toLocaleTimeString(lang, { hour12: false })}</time>
-      <span className={'diag-status ' + status}>{t[status]}</span>
+      <span className={'diag-status ' + status}>{entry.operation === 'MCP' && 'MCP · '}{t[status]}</span>
       <span className="diag-duration">{duration(entry.elapsedMs ?? now - entry.started)}</span>
       <code>{summary}</code>
       <Chevron down={expanded} />
@@ -54,7 +54,7 @@ function LogPanel() {
   const t = useMessages().diagnostics;
   const [expanded, setExpanded] = useState(true);
   const [now, setNow] = useState(Date.now);
-  const runningToken = entries[0]?.elapsedMs === undefined ? entries[0]?.token : undefined;
+  const runningToken = entries.find(e => e.elapsedMs === undefined)?.token;
   useEffect(() => {
     if (!runningToken || !expanded) return;
     setNow(Date.now());

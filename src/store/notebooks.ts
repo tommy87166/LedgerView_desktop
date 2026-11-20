@@ -209,3 +209,38 @@ export function setOutput(id: string, cell: number, output: CellOutput) {
       : s,
   );
 }
+
+export interface AiCellEdit { slot?: number | null; name: string; sql: string }
+
+// Apply via the same autosave queue as typing. Comparing in the WebView includes
+// edits still inside the debounce interval, which have not reached DuckDB yet.
+export async function applyAiNotebook(before: StoredNotebook | null, name: string, cells: AiCellEdit[]) {
+  const old = before && loadNotebook(before);
+  const current = useNotebooks.getState().books.find(b => b.id === old?.id);
+  if (old && (!current || current.name !== old.name || current.cells.length !== old.cells.length ||
+    current.cells.some((c, i) => c.slot !== old.cells[i].slot || c.name !== old.cells[i].name || c.sql !== old.cells[i].sql))) {
+    throw Error('Notebook changed in LedgerView. Read the latest revision.');
+  }
+  const slots = new Set(old?.cells.map(c => c.slot));
+  const nextCells = cells.map(c => {
+    if (c.slot != null && !slots.delete(c.slot)) throw Error('Unknown or repeated cell slot');
+    return { ...c, slot: c.slot ?? nextSlot++ };
+  });
+  if (!current) {
+    const created = loadNotebook(await request('createNotebookDraft', { draft: { name, cells: nextCells } }));
+    useNotebooks.setState(s => ({ books: [...s.books, created] }));
+    return { id: created.id };
+  }
+  const book = current;
+  const updated = { ...book, name, cells: nextCells };
+  editNotebook(updated);
+  await flushNotebook(book.id);
+  const id = book.id;
+  useNotebooks.setState(s => ({
+    outputs: Object.fromEntries(Object.entries(s.outputs).filter(([key]) => {
+      const prefix = id + '/';
+      return !key.startsWith(prefix) || !slots.has(Number(key.slice(prefix.length)));
+    })),
+  }));
+  return { id };
+}

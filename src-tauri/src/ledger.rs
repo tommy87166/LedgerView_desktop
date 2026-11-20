@@ -45,6 +45,8 @@ pub struct Dataset {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    #[serde(default)]
+    pub ai_created: bool,
     pub id: String,
     pub table_name: String,
     pub display_name: String,
@@ -58,17 +60,20 @@ pub struct Snapshot {
     pub created_at: String,
 }
 
-fn parquet_scan(path: &str, row_number: bool) -> String {
+pub(crate) fn parquet_pattern(path: &str) -> String {
     // DuckDB accepts globs even for a single file. Match metacharacters literally.
-    let pattern: String = path
-        .chars()
+    path.chars()
         .map(|c| match c {
             '[' => "[[]".into(),
             '*' => "[*]".into(),
             '?' => "[?]".into(),
             _ => c.to_string(),
         })
-        .collect();
+        .collect()
+}
+
+pub(crate) fn parquet_scan(path: &str, row_number: bool) -> String {
+    let pattern = parquet_pattern(path);
     format!(
         "read_parquet({}, hive_partitioning=false, file_row_number={row_number})",
         literal(&pattern)
@@ -148,7 +153,7 @@ fn refresh(conn: &Connection, ds: &mut Dataset) -> Result<()> {
     Ok(())
 }
 
-pub fn open(conn: &Connection, path: &Path) -> Result<Dataset> {
+pub(crate) fn file_dataset(conn: &Connection, path: &Path) -> Result<Dataset> {
     ensure!(
         path.extension()
             .and_then(|s| s.to_str())
@@ -172,6 +177,11 @@ pub fn open(conn: &Connection, path: &Path) -> Result<Dataset> {
         ephemeral: false,
     };
     refresh(conn, &mut ds)?;
+    Ok(ds)
+}
+
+pub fn open(conn: &Connection, path: &Path) -> Result<Dataset> {
+    let ds = file_dataset(conn, path)?;
     bindings::execute(
         conn,
         "INSERT INTO ledger_entries (id, dataset, snapshot) VALUES (?, ?, NULL)",
@@ -338,9 +348,25 @@ pub fn create_snapshot(
     description: String,
 ) -> Result<Snapshot> {
     let tx = conn.unchecked_transaction()?;
-    let snapshot = snapshot_in_transaction(&tx, ds, filters, sort, columns, description, None)?;
+    let snapshot = snapshot_in_transaction(
+        &tx,
+        ds,
+        filters,
+        sort,
+        columns,
+        description,
+        SnapshotTarget::Manual(None),
+    )?;
     tx.commit()?;
     Ok(snapshot)
+}
+
+pub(crate) enum SnapshotTarget {
+    Manual(Option<String>),
+    Ai {
+        name: String,
+        replace_id: Option<String>,
+    },
 }
 
 pub(crate) fn snapshot_in_transaction(
@@ -350,14 +376,37 @@ pub(crate) fn snapshot_in_transaction(
     sort: Vec<Sort>,
     columns: Vec<String>,
     description: String,
-    name: Option<String>,
+    target: SnapshotTarget,
 ) -> Result<Snapshot> {
     ensure!(!columns.is_empty(), "Select at least one visible column");
     let projected = columns
         .iter()
         .map(|c| ds.column(c).cloned())
         .collect::<Result<Vec<_>>>()?;
-    let table = id("snap");
+    let ai_created = matches!(target, SnapshotTarget::Ai { .. });
+    let (name, replace) = match target {
+        SnapshotTarget::Manual(name) => (name, None),
+        SnapshotTarget::Ai { name, replace_id } => {
+            ensure!(!name.trim().is_empty(), "Enter a snapshot name");
+            (Some(name), replace_id)
+        }
+    };
+    let table = if let Some(id) = replace {
+        let raw: String = tx.query_row(
+            "SELECT snapshot FROM ledger_entries WHERE id=?",
+            [&id],
+            |r| r.get(0),
+        )?;
+        let previous: Snapshot = serde_json::from_str(&raw)?;
+        ensure!(
+            previous.ai_created,
+            "Only AI-created snapshots can be replaced"
+        );
+        tx.execute_batch(&format!("DROP TABLE {}", ident(&previous.table_name)))?;
+        id
+    } else {
+        id("snap")
+    };
     let name = name.unwrap_or_else(|| format!("{}_{}", ds.display_name, &table[5..11]));
     let p = predicate(ds, &filters)?;
     let fields = columns
@@ -375,6 +424,7 @@ pub(crate) fn snapshot_in_transaction(
         |r| r.get(0),
     )?;
     let snap = Snapshot {
+        ai_created,
         id: table.clone(),
         table_name: table.clone(),
         display_name: name.clone(),
@@ -401,7 +451,7 @@ pub(crate) fn snapshot_in_transaction(
     };
     bindings::execute(
         tx,
-        "INSERT INTO ledger_entries (id, dataset, snapshot) VALUES (?,?,?)",
+        "INSERT INTO ledger_entries (id, dataset, snapshot) VALUES (?,?,?) ON CONFLICT (id) DO UPDATE SET dataset=excluded.dataset, snapshot=excluded.snapshot",
         &[
             &table,
             &serde_json::to_string(&preview)?,

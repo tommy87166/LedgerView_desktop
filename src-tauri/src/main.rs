@@ -3,6 +3,7 @@
 mod bindings;
 mod filter;
 mod ledger;
+mod mcp;
 mod notebooks;
 
 use anyhow::{Context, Result};
@@ -28,6 +29,9 @@ enum Request {
     Restore,
     CreateNotebook {
         cell_name: String,
+    },
+    CreateNotebookDraft {
+        draft: notebooks::Draft,
     },
     SaveNotebook {
         book: notebooks::Notebook,
@@ -222,6 +226,7 @@ impl Engine {
                 json!({"persistent": self.persistent, "catalog": ledger::restore(conn)?, "notebooks": notebooks::list(conn)?})
             }
             CreateNotebook { cell_name } => json!(notebooks::create(conn, cell_name)?),
+            CreateNotebookDraft { draft } => json!(notebooks::create_draft(conn, draft)?),
             SaveNotebook { book } => {
                 notebooks::save(conn, &book)?;
                 Value::Null
@@ -366,6 +371,7 @@ fn cancel_query(database: State<'_, Database>, token: String) {
 
 fn main() {
     tauri::Builder::default()
+        .manage(mcp::Control::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
@@ -379,7 +385,15 @@ fn main() {
             app.manage(Database(engine));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ledger_request, cancel_query])
+        .invoke_handler(tauri::generate_handler![
+            ledger_request,
+            cancel_query,
+            mcp::mcp_info,
+            mcp::mcp_set_enabled,
+            mcp::mcp_page,
+            mcp::mcp_claim_edit,
+            mcp::mcp_edit_reply
+        ])
         .run(tauri::generate_context!())
         .expect("Starting LedgerView");
 }

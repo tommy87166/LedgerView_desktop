@@ -55,7 +55,7 @@ export function AppShell() {
     setAggColumn('');
     setFilteredCount(null);
     setColPickerOpen(false);
-  }, [activeId, lang]);
+  }, [activeId, active?.importedAt, lang]);
 
   // 計算選定數值欄在目前篩選下的彙總（查帳常用）。
   useEffect(() => {
@@ -240,7 +240,7 @@ export function AppShell() {
         <div className="main-area">
           {active ? (
             <LedgerGrid
-              key={`${active.id}-${lang}`}
+              key={`${active.id}-${active.importedAt}-${lang}`}
               dataset={active}
               onFilteredCount={setFilteredCount}
               onApiReady={onApiReady}

@@ -24,6 +24,7 @@ import type {
   SqlVocabulary,
   SqlCell as Cell,
 } from '../../types/notebook';
+import { QueryTable } from '../common/QueryTable';
 import { IconSnapshot } from '../common/icons';
 
 let vocabulary: Promise<SqlVocabulary> | undefined;
@@ -159,32 +160,7 @@ function SqlCell({
             )}
             {cell.sql !== out.sql && <span> · {t.stale}</span>}
           </summary>
-          <div className="query-scroll" tabIndex={0} aria-label={cell.name}>
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">#</th>
-                  {result.columns.map((c) => (
-                    <th scope="col" key={c.name} title={c.duckdbType}>
-                      {c.name}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {result.rows.map((row, i) => (
-                  <tr key={row[0] ?? i}>
-                    <th scope="row">{(start + i + 1).toLocaleString()}</th>
-                    {row.slice(1).map((value, j) => (
-                      <td key={j} className={value === null ? 'null-value' : undefined}>
-                        {value ?? 'NULL'}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <QueryTable label={cell.name} columns={result.columns} rows={result.rows.map(row => row.slice(1))} start={start} />
           {result.total > 100 && (
             <div className="query-pages">
               <button

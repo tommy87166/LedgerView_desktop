@@ -1008,3 +1008,9 @@ input[type='number']:not(.ag-input-field-input):focus {
 .diag-entry > .diag-params { margin-inline: 14px; }
 .diag-params > span { color: #655f59; font-size: 11px; }
 .diag-params code { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; color: #3f5146; background: #f2f5f1; border-radius: 3px; padding: 1px 5px; user-select: text; }
+
+.mcp-connection, .mcp-preview footer { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.mcp-connection { justify-content: space-between; }
+.mcp-preview { width: min(90vw, 70rem); max-width: 90vw; }
+.mcp-preview .query-scroll { max-height: 65vh; overflow: auto; }
+.mcp-preview footer { justify-content: flex-end; margin-top: .75rem; }

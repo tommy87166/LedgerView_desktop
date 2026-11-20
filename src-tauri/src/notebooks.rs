@@ -52,7 +52,7 @@ pub fn list(conn: &Connection) -> Result<Vec<Notebook>> {
     rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
 }
 
-fn get(conn: &Connection, id: &str) -> Result<Notebook> {
+pub(crate) fn get(conn: &Connection, id: &str) -> Result<Notebook> {
     let text: String = bindings::query_row(
         conn,
         "SELECT document FROM ledger_notebooks WHERE id=?",
@@ -74,6 +74,26 @@ fn insert(conn: &Connection, name: String, cells: Vec<Cell>) -> Result<Notebook>
         &[&book.id, &serde_json::to_string(&book)?],
     )?;
     Ok(book)
+}
+
+#[derive(Deserialize)]
+pub(crate) struct Draft {
+    name: String,
+    cells: Vec<Cell>,
+}
+
+pub(crate) fn create_draft(conn: &Connection, draft: Draft) -> Result<Notebook> {
+    ensure!(!draft.name.trim().is_empty(), "Enter a notebook name");
+    let mut used = HashSet::new();
+    ensure!(
+        draft
+            .cells
+            .iter()
+            .enumerate()
+            .all(|(i, c)| used.insert(c.slot.unwrap_or(i))),
+        "Duplicate SQL cell"
+    );
+    insert(conn, draft.name, draft.cells)
 }
 
 pub fn create(conn: &Connection, cell_name: String) -> Result<Notebook> {
@@ -198,7 +218,7 @@ pub fn delete(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
-fn sources(conn: &Connection) -> Result<Vec<(String, Dataset)>> {
+pub(crate) fn sources(conn: &Connection) -> Result<Vec<(String, Dataset)>> {
     let mut stmt = conn.prepare("SELECT dataset, sql_alias FROM ledger_entries ORDER BY rowid")?;
     let rows = stmt.query_map([], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
@@ -398,7 +418,7 @@ pub fn run(conn: &Connection, id: &str, slot: usize, sql: &str, snapshot: bool) 
             vec![],
             fields,
             sql.to_owned(),
-            Some(distinct_name(&name, &used)),
+            ledger::SnapshotTarget::Manual(Some(distinct_name(&name, &used))),
         )?)
     } else {
         None

@@ -7,6 +7,8 @@ import { useUi } from '../../store/ui';
 
 import { useDiagnostics } from '../../store/diagnostics';
 
+import { McpSettings } from './McpWorkspace';
+
 export function WorkspaceSettings() {
   const t = useMessages();
   const lang = useLang();
@@ -49,6 +51,7 @@ export function WorkspaceSettings() {
           {t.diagnostics.setting}
           <input type="checkbox" checked={diagnostics} onChange={(e) => useDiagnostics.getState().setEnabled(e.target.checked)} />
         </label>
+        <McpSettings />
         <details>
           <summary>{t.changelog.title}</summary>
           <div className="changelog-entry">

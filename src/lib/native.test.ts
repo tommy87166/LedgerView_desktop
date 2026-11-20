@@ -85,3 +85,15 @@ it('does not restore cleared SQL or bound values if an old request reports after
   expect(await count()).toBe(2);
   expect(log().entries).toEqual([]);
 });
+
+it('keeps concurrent MCP and desktop diagnostics separate', async () => {
+  log().begin({ token: 'mcp', operation: 'MCP', sql: 'SELECT 1', started: Date.now() });
+  ipc.mockImplementationOnce(async () => {
+    log().finish('mcp', 42, [{ sql: 'SELECT 1' }]);
+    return { result: 2, elapsedMs: 8, queries: [statement] };
+  });
+  expect(await count()).toBe(2);
+  expect(log().entries).toMatchObject([
+    { operation: 'count', elapsedMs: 8 }, { operation: 'MCP', elapsedMs: 42 },
+  ]);
+});

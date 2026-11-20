@@ -1,6 +1,7 @@
 import type { FilterModel, SortModel } from './filters';
 
 export interface SnapshotMeta {
+  aiCreated?: boolean;
   id: string;
   /** DuckDB 中的快照表名稱，如 'snap_xxxx'。 */
   tableName: string;

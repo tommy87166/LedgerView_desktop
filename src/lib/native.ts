@@ -22,6 +22,7 @@ type Filtered = ById & { filters: FilterModel };
 interface Commands {
   restore: [{}, { persistent: boolean; catalog: Catalog; notebooks: StoredNotebook[] }];
   createNotebook: [{ cellName: string }, StoredNotebook];
+  createNotebookDraft: [{ draft: Pick<Notebook, 'name' | 'cells'> }, StoredNotebook];
   saveNotebook: [{ book: Notebook }, void];
   openNotebook: [{ path: string }, StoredNotebook];
   exportNotebook: [ById & { path: string }, void];

@@ -49,7 +49,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | 桌面 | Tauri 2，透過 `invoke` 呼叫 Rust |
 | 前端 | React、TypeScript、Vite、AG Grid Community，沿用 LedgerView 的表格互動與篩選模型 |
 | 查詢 | Rust + `duckdb` crate，內建 DuckDB 2.0.0，直接讀取 Parquet |
-| MCP（規劃） | Rust 官方 SDK `rmcp` + Axum，使用 Streamable HTTP |
+| 本機 MCP | Rust 官方 SDK `rmcp` + Axum，使用 Streamable HTTP |
 
 桌面程式直接嵌入 DuckDB，發佈時只需處理桌面程式與原生函式庫的建置和簽章。前端沿用既有 TypeScript 堆疊，查詢由 Rust 提供。Cargo 固定使用 crates.io 的 `duckdb 1.20000.2`，透過 `bundled`、`parquet` 和 `json` features 將 DuckDB 2.0.0 與擴充編入程式。建置環境需能編譯 DuckDB 的 C++ 原始碼。[Tauri commands](https://v2.tauri.app/develop/calling-rust/) · [duckdb 1.20000.2](https://crates.io/crates/duckdb/1.20000.2) · [Cargo features](https://docs.rs/crate/duckdb/1.20000.2/features) · [Rust MCP SDK](https://github.com/modelcontextprotocol/rust-sdk)
 
@@ -59,10 +59,22 @@ cargo test --manifest-path src-tauri/Cargo.toml
 - AG Grid 按需向後端取資料。畫面把欄位、篩選條件和排序傳給 Rust，由 Rust 產生 SQL 並綁定篩選值。跨到 JavaScript 的 `DECIMAL` 和大整數用字串傳輸，以保留精度。
 - 同步 DuckDB 查詢由背景 worker 執行。GUI 顯示執行時間並可取消查詢。查詢設定 4 個執行緒、2 GB 引擎記憶體預算與 8 GB 暫存磁碟上限。[DuckDB Connection API](https://docs.rs/duckdb/latest/duckdb/struct.Connection.html) · [DuckDB 效能調校](https://duckdb.org/docs/current/guides/performance/how_to_tune_workloads)
 
-## 本機 MCP 設計（尚未實作）
+## 從 AI 操作 LedgerView
 
-- 由使用者啟用後，才在 `http://127.0.0.1:<port>/mcp` 提供 Streamable HTTP。端點需要授權憑證，驗證 `Host` 與請求所帶的 `Origin`。GUI 透過 Tauri IPC 使用查詢服務，MCP 可獨立開關。[MCP 傳輸規格](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
-- 原定的 MCP 首版提供資料集清單、欄位資訊與唯讀 SQL。使用者逐個資料集授權，SQL 執行環境限制外部檔案與網路存取、擴充套件載入、查詢時間及回傳大小。[DuckDB 安全設定](https://duckdb.org/docs/current/operations_manual/securing_duckdb/overview)
+開啟 LedgerView，在左下角 **設定 → 啟用本機 MCP** 勾選後，按 **複製連線設定**。把 URL 和授權標頭填入支援 Streamable HTTP 的 MCP 用戶端。服務位於 `http://127.0.0.1:18476/mcp`，每次重新啟用都會產生新的權杖。關閉服務或退出程式即中止連線。[MCP 傳輸規格](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
+
+啟用期間，連線的 AI 可查詢整個工作區的來源和快照、讀取及編輯所有筆記本。在設定中打開診斷日誌，可看到標示為 MCP 的 SQL、耗時及錯誤。
+
+| 工具 | 行為 |
+| --- | --- |
+| `list_sources` | 列出資料表別名、欄位名稱及型別。 |
+| `query` | 執行一段唯讀 DuckDB SQL。預設將第一頁回傳給 AI；設 `preview: true` 會在桌面開啟預覽，AI 收到結果 ID 和列數。 |
+| `result_page` | 使用前一頁的 `next` 取得後續資料。每頁最多 100 列，資料列內容最多 512 KiB。 |
+| `save_snapshot` | 使用結果 ID 保存完整結果。傳 `focus: true` 可切換到該快照。之後指定同一個 `replaceId`，可整份更新 AI 建立的快照。 |
+| `list_notebooks` | 讀取筆記本、區塊名稱、SQL 與編輯版本。 |
+| `edit_notebook` | 建立筆記本，或依 `expectedRevision` 編輯現有筆記本的名稱、區塊與 SQL。既有區塊保留 slot，新區塊省略 slot。若使用者已修改，工具會回報衝突。 |
+
+MCP 查詢使用獨立的 DuckDB 實例，直接讀取已開啟的原始 Parquet。工作區快照以本次連線的暫存 Parquet 提供給查詢。SQL 執行上限 60 秒，最近八份成功結果可供翻頁、預覽與建立快照。關閉 MCP 後清除暫存結果；已存快照及筆記本依工作區模式保存。
 
 ## 大檔驗證
 

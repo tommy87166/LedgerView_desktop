@@ -92,6 +92,7 @@ export const MESSAGES_ZH_TW = {
     release: '桌面版支援本機 Parquet 查詢、跨檔篩選、快照和 Parquet 匯出。',
   },
 
+  mcp: { enable: '啟用本機 MCP', copy: '複製連線設定', copied: '已複製連線設定', preview: 'MCP 查詢預覽' },
   diagnostics: {
     title: '診斷日誌',
     setting: '顯示診斷日誌',

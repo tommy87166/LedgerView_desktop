@@ -94,6 +94,7 @@ export const MESSAGES_EN: Messages = {
       'Browse local Parquet files, filter across ledgers, save snapshots and export Parquet.',
   },
 
+  mcp: { enable: 'Enable local MCP', copy: 'Copy connection settings', copied: 'Connection settings copied', preview: 'MCP query preview' },
   diagnostics: {
     title: 'Diagnostic log',
     setting: 'Show diagnostic log',
