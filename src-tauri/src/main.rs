@@ -41,6 +41,7 @@ enum Request {
         id: String,
     },
     NotebookSources,
+    SqlVocabulary,
     RunNotebook {
         sql: String,
         id: String,
@@ -190,7 +191,8 @@ impl Engine {
                 notebooks::delete(conn, &id)?;
                 Value::Null
             }
-            NotebookSources => json!(notebooks::source_names(conn)?),
+            SqlVocabulary => json!(notebooks::sql_vocabulary(conn)?),
+            NotebookSources => json!(notebooks::notebook_sources(conn)?),
             RunNotebook {
                 id,
                 cell,

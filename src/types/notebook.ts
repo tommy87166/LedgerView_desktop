@@ -1,6 +1,17 @@
 import type { ColumnMeta } from './dataset';
 import type { SnapshotMeta } from './snapshot';
 
+export interface NotebookSource {
+  name: string;
+  isSnapshot: boolean;
+  columns: ColumnMeta[];
+}
+export interface SqlVocabulary {
+  keywords: string[];
+  functions: string[];
+  tableFunctions: string[];
+  types: string[];
+}
 export interface SqlCell {
   slot: number;
   name: string;

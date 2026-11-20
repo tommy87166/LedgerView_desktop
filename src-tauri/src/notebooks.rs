@@ -251,8 +251,62 @@ fn sources(conn: &Connection) -> Result<Vec<(String, Dataset)>> {
     Ok(available)
 }
 
-pub fn source_names(conn: &Connection) -> Result<Vec<String>> {
-    Ok(sources(conn)?.into_iter().map(|(name, _)| name).collect())
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotebookSource {
+    name: String,
+    is_snapshot: bool,
+    columns: Vec<ledger::Column>,
+}
+
+pub fn notebook_sources(conn: &Connection) -> Result<Vec<NotebookSource>> {
+    Ok(sources(conn)?
+        .into_iter()
+        .map(|(name, ds)| NotebookSource {
+            name,
+            is_snapshot: ds.ephemeral,
+            columns: ds.columns,
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SqlVocabulary {
+    keywords: Vec<String>,
+    functions: Vec<String>,
+    table_functions: Vec<String>,
+    types: Vec<String>,
+}
+
+pub fn sql_vocabulary(conn: &Connection) -> Result<SqlVocabulary> {
+    fn words(conn: &Connection, sql: &str) -> Result<Vec<String>> {
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map([], |row| row.get(0))?;
+        Ok(rows.collect::<duckdb::Result<_>>()?)
+    }
+    Ok(SqlVocabulary {
+        keywords: words(
+            conn,
+            "SELECT DISTINCT keyword_name FROM duckdb_keywords() ORDER BY 1",
+        )?,
+        functions: words(
+            conn,
+            "SELECT DISTINCT function_name FROM duckdb_functions()
+            WHERE function_type IN ('scalar','aggregate','macro','window')
+            AND regexp_full_match(function_name,'[a-zA-Z_][a-zA-Z_0-9]*') ORDER BY 1",
+        )?,
+        table_functions: words(
+            conn,
+            "SELECT DISTINCT function_name FROM duckdb_functions()
+            WHERE function_type IN ('table','table_macro') ORDER BY 1",
+        )?,
+        types: words(
+            conn,
+            "SELECT DISTINCT type_name FROM duckdb_types()
+            WHERE regexp_full_match(type_name,'[a-zA-Z_][a-zA-Z_0-9]*') ORDER BY 1",
+        )?,
+    })
 }
 
 fn result_dataset(conn: &Connection, table: String, name: String) -> Result<Dataset> {

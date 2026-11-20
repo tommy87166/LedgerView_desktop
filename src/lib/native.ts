@@ -4,7 +4,7 @@ import type { DatasetMeta } from '../types/dataset';
 import type { FilterModel, SortModel } from '../types/filters';
 import type { SnapshotMeta } from '../types/snapshot';
 
-import type { Notebook, StoredNotebook, QueryResult } from '../types/notebook';
+import type { Notebook, NotebookSource, SqlVocabulary, StoredNotebook, QueryResult } from '../types/notebook';
 
 export interface Aggregate {
   sum: string | null;
@@ -25,7 +25,8 @@ interface Commands {
   openNotebook: [{ path: string }, StoredNotebook];
   exportNotebook: [ById & { path: string }, void];
   deleteNotebook: [ById, void];
-  notebookSources: [{}, string[]];
+  sqlVocabulary: [{}, SqlVocabulary];
+  notebookSources: [{}, NotebookSource[]];
   runNotebook: [ById & { cell: number; sql: string; snapshot: boolean }, QueryResult];
   notebookPage: [ById & { cell: number; start: number }, QueryResult['rows']];
   diskSpace: [{}, number | null];

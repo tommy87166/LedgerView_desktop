@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { confirm, save } from '@tauri-apps/plugin-dialog';
 import { useMessages } from '../../i18n';
 import { request } from '../../lib/native';
@@ -15,15 +15,40 @@ import {
 } from '../../store/notebooks';
 import { useSnapshots } from '../../store/snapshots';
 import { useUi } from '../../store/ui';
-import type { Notebook, SqlCell as Cell } from '../../types/notebook';
+import { SqlEditor } from './SqlEditor';
+import { notebookLanguage } from '../../lib/notebookSql';
+import type { Extension } from '@codemirror/state';
+import type {
+  Notebook,
+  NotebookSource,
+  SqlVocabulary,
+  SqlCell as Cell,
+} from '../../types/notebook';
 import { IconSnapshot } from '../common/icons';
 
-function SqlCell({ book, cell, sources }: { book: Notebook; cell: Cell; sources: string[] }) {
+let vocabulary: Promise<SqlVocabulary> | undefined;
+function loadVocabulary() {
+  return (vocabulary ??= request('sqlVocabulary', {}).catch((error) => {
+    vocabulary = undefined;
+    throw error;
+  }));
+}
+
+function SqlCell({
+  book,
+  cell,
+  sources,
+  language,
+}: {
+  book: Notebook;
+  cell: Cell;
+  sources: NotebookSource[];
+  language: Extension;
+}) {
   const t = useMessages().notebook;
   const slot = cell.slot;
   const key = book.id + '/' + slot;
   const out = useNotebooks((s) => s.outputs[key]);
-  const input = useRef<HTMLTextAreaElement>(null);
   const result = out?.result;
   const start = out?.start ?? 0;
   const update = (sql: string) => updateCell(book.id, slot, { sql });
@@ -34,19 +59,19 @@ function SqlCell({ book, cell, sources }: { book: Notebook; cell: Cell; sources:
       useUi.getState().toast('error', String(err));
     }
   };
-  const run = async (snapshot: boolean) => {
-    if (useNotebooks.getState().outputs[key]?.busy || !cell.sql.trim()) return;
+  const run = async (snapshot: boolean, sql = cell.sql) => {
+    if (useNotebooks.getState().outputs[key]?.busy || !sql.trim()) return;
     setOutput(book.id, slot, { busy: true });
     try {
       await flushNotebook(book.id);
       const result = await request('runNotebook', {
         id: book.id,
         cell: slot,
-        sql: cell.sql,
+        sql,
         snapshot,
       });
       if (result.snapshot) useSnapshots.getState().addSnapshot(result.snapshot);
-      setOutput(book.id, slot, { result, sql: cell.sql, start: 0 });
+      setOutput(book.id, slot, { result, sql, start: 0 });
     } catch (err) {
       setOutput(book.id, slot, { error: String(err) });
     }
@@ -103,44 +128,15 @@ function SqlCell({ book, cell, sources }: { book: Notebook; cell: Cell; sources:
           ×
         </button>
       </div>
-      <textarea
-        ref={input}
-        value={cell.sql}
-        placeholder={t.placeholder}
-        spellCheck={false}
-        aria-label={cell.name + ' SQL'}
-        onChange={(e) => update(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            void run(false);
-          }
-        }}
+      <SqlEditor
+        sql={cell.sql}
+        label={cell.name + ' SQL'}
+        hint={t.placeholder}
+        sources={sources}
+        language={language}
+        onChange={update}
+        onRun={(sql) => void run(false, sql)}
       />
-      {sources.length > 0 && (
-        <select
-          className="sql-sources"
-          value=""
-          aria-label={t.sources}
-          onChange={(e) => {
-            const field = input.current;
-            if (!field || !e.target.value) return;
-            const quoted = '"' + e.target.value.replaceAll('"', '""') + '"';
-            const insert = cell.sql.trim() ? quoted : 'SELECT * FROM ' + quoted + ';';
-            const pos = field.selectionStart;
-            update(cell.sql.slice(0, pos) + insert + cell.sql.slice(field.selectionEnd));
-            requestAnimationFrame(() => {
-              field.focus();
-              field.setSelectionRange(pos + insert.length, pos + insert.length);
-            });
-          }}
-        >
-          <option value="">{t.sources}</option>
-          {sources.map((s) => (
-            <option key={s}>{s}</option>
-          ))}
-        </select>
-      )}
       {out?.busy && (
         <p className="sql-message" role="status">
           {t.running}
@@ -224,21 +220,36 @@ export function NotebookWorkspace() {
   const { persistent, rowHeight, toast } = useUi();
   const datasets = useDatasets((s) => s.datasets);
   const snapshots = useSnapshots((s) => s.snapshots);
-  const [sources, setSources] = useState<string[]>([]);
+  const [sources, setSources] = useState<NotebookSource[]>([]);
+  const [words, setWords] = useState<SqlVocabulary | null>(null);
+  const language = useMemo(() => notebookLanguage(sources, words, t), [sources, words, t]);
+  useEffect(() => {
+    let current = true;
+    loadVocabulary()
+      .then((value) => {
+        if (current) setWords(value);
+      })
+      .catch((e) => {
+        if (current) toast('error', String(e));
+      });
+    return () => {
+      current = false;
+    };
+  }, [toast]);
   const [exporting, setExporting] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   const focusNewCell = useRef(false);
   useLayoutEffect(() => {
     if (!focusNewCell.current) return;
     focusNewCell.current = false;
-    list.current?.querySelector<HTMLTextAreaElement>('.sql-cell:last-of-type textarea')?.focus();
+    list.current?.querySelector<HTMLElement>('.sql-cell:last-of-type .cm-content')?.focus();
   }, [book?.id, book?.cells.length]);
 
   useEffect(() => {
     let current = true;
     request('notebookSources', {})
-      .then((names) => {
-        if (current) setSources(names);
+      .then((tables) => {
+        if (current) setSources(tables);
       })
       .catch((e) => {
         if (current) toast('error', String(e));
@@ -326,7 +337,7 @@ export function NotebookWorkspace() {
         style={{ '--query-row-height': rowHeight + 'px' } as CSSProperties}
       >
         {book?.cells.map((cell) => (
-          <SqlCell key={cell.slot} book={book} cell={cell} sources={sources} />
+          <SqlCell key={cell.slot} book={book} cell={cell} sources={sources} language={language} />
         ))}
         {book && (
           <button

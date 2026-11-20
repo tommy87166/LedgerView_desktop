@@ -368,6 +368,15 @@ fn notebook_query_snapshot_paging_and_failure_rollback() -> Result<()> {
     let run = |sql: &str, snapshot: bool| {
         s.send(json!({"type":"runNotebook","id":id,"cell":0,"sql":sql,"snapshot":snapshot}))
     };
+    let words = s.send(json!({"type":"sqlVocabulary"}))?;
+    for (group, word) in [
+        ("keywords", "qualify"),
+        ("functions", "list_transform"),
+        ("tableFunctions", "read_parquet"),
+        ("types", "hugeint"),
+    ] {
+        assert!(words[group].as_array().unwrap().contains(&json!(word)));
+    }
     let result = run(
         r#"SELECT n, uuid() AS token FROM "總帳" ORDER BY n DESC;"#,
         true,
@@ -377,6 +386,13 @@ fn notebook_query_snapshot_paging_and_failure_rollback() -> Result<()> {
     assert_eq!(result["rows"][0][1], "204");
     let snapshot = &result["snapshot"];
     assert_eq!(snapshot["displayName"], "SQL 1 · 查詢 1");
+    assert_eq!(
+        s.send(json!({"type":"notebookSources"}))?,
+        json!([
+            {"name":"總帳", "isSnapshot":false, "columns":[result["columns"][0]]},
+            {"name":snapshot["displayName"], "isSnapshot":true, "columns":result["columns"]}
+        ])
+    );
     let persisted = s.page(&snapshot["id"], json!({}), json!([]), json!(["n", "token"]))?;
     assert_eq!(persisted[0], result["rows"][0]); // volatile expressions were evaluated once
     let last = s.send(json!({"type":"notebookPage","id":id,"cell":0,"start":200}))?;
@@ -411,17 +427,17 @@ fn notebook_aliases_survive_missing_and_closed_duplicate_sources() -> Result<()>
     s.send(json!({"type":"open","path":path}))?;
     assert_eq!(
         s.send(json!({"type":"notebookSources"}))?,
-        json!(["科目", "科目 (2)"])
+        json!([{"name":"科目", "isSnapshot":false, "columns":first["columns"]}, {"name":"科目 (2)", "isSnapshot":false, "columns":first["columns"]}])
     );
     fs::write(first["sourceFile"].as_str().unwrap(), b"invalid parquet")?;
     assert_eq!(
         s.send(json!({"type":"notebookSources"}))?,
-        json!(["科目 (2)"])
+        json!([{"name":"科目 (2)", "isSnapshot":false, "columns":first["columns"]}])
     );
     fs::remove_file(first["sourceFile"].as_str().unwrap())?;
     assert_eq!(
         s.send(json!({"type":"notebookSources"}))?,
-        json!(["科目 (2)"])
+        json!([{"name":"科目 (2)", "isSnapshot":false, "columns":first["columns"]}])
     );
     s.send(json!({"type":"remove","id":first["id"]}))?;
     let book = s.send(json!({"type":"createNotebook","cellName":"查詢 1"}))?;
