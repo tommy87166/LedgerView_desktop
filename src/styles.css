@@ -896,7 +896,8 @@ input[type='number']:not(.ag-input-field-input):focus {
 .sql-cell-toolbar .btn, .query-pages .btn { font-size: 12px; }
 .sql-editor { height: 84px; min-height: 76px; resize: vertical; overflow: hidden; }
 .sql-editor .cm-editor { height: 100%; }
-.sql-editor .cm-editor.cm-focused { outline: 2px solid var(--lv-ring); outline-offset: -2px; }
+.sql-editor .cm-editor.cm-focused,
+.sql-editor .cm-content:focus-visible { outline: none; }
 .sql-editor .cm-scroller { overflow: auto; font: 13px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; }
 .sql-editor .cm-content { padding: 10px 0; }
 .sql-editor .cm-line { padding: 0 14px; }
