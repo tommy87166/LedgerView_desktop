@@ -8,7 +8,7 @@ use uuid::Uuid;
 pub fn ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
-fn literal(s: &str) -> String {
+pub(crate) fn literal(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
 }
 fn id(prefix: &str) -> String {
@@ -81,7 +81,7 @@ impl Dataset {
             .find(|c| c.name == name)
             .with_context(|| format!("Unknown column {name}"))
     }
-    fn relation(&self) -> String {
+    pub(crate) fn relation(&self) -> String {
         if self.ephemeral {
             return ident(&self.table_name);
         }
@@ -100,7 +100,7 @@ impl Dataset {
     }
 }
 
-fn describe(conn: &Connection, relation: &str) -> Result<Vec<Column>> {
+pub(crate) fn describe(conn: &Connection, relation: &str) -> Result<Vec<Column>> {
     let mut stmt = conn.prepare(&format!("DESCRIBE SELECT * FROM {relation}"))?;
     let rows = stmt.query_map([], |r| {
         let name = r.get(0)?;
@@ -126,7 +126,9 @@ fn describe(conn: &Connection, relation: &str) -> Result<Vec<Column>> {
 pub fn init(conn: &Connection) -> Result<()> {
     conn.execute_batch("SET autoinstall_known_extensions=false; SET autoload_known_extensions=false;
         LOAD parquet; LOAD json; SET threads=4; SET memory_limit='2GB'; SET max_temp_directory_size='8GB';
-        CREATE TABLE IF NOT EXISTS ledger_entries (id VARCHAR PRIMARY KEY, dataset VARCHAR NOT NULL, snapshot VARCHAR)")?;
+        CREATE TABLE IF NOT EXISTS ledger_entries (id VARCHAR PRIMARY KEY, dataset VARCHAR NOT NULL, snapshot VARCHAR);
+        ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS sql_alias VARCHAR;
+        CREATE TABLE IF NOT EXISTS ledger_notebooks (id VARCHAR PRIMARY KEY, document VARCHAR NOT NULL)")?;
     Ok(())
 }
 
@@ -170,7 +172,7 @@ pub fn open(conn: &Connection, path: &Path) -> Result<Dataset> {
     };
     refresh(conn, &mut ds)?;
     conn.execute(
-        "INSERT INTO ledger_entries VALUES (?, ?, NULL)",
+        "INSERT INTO ledger_entries (id, dataset, snapshot) VALUES (?, ?, NULL)",
         params![ds.id, serde_json::to_string(&ds)?],
     )?;
     Ok(ds)
@@ -335,20 +337,34 @@ pub fn create_snapshot(
     columns: Vec<String>,
     description: String,
 ) -> Result<Snapshot> {
+    let tx = conn.unchecked_transaction()?;
+    let snapshot = snapshot_in_transaction(&tx, ds, filters, sort, columns, description, None)?;
+    tx.commit()?;
+    Ok(snapshot)
+}
+
+pub(crate) fn snapshot_in_transaction(
+    tx: &duckdb::Transaction<'_>,
+    ds: &Dataset,
+    filters: Filters,
+    sort: Vec<Sort>,
+    columns: Vec<String>,
+    description: String,
+    name: Option<String>,
+) -> Result<Snapshot> {
     ensure!(!columns.is_empty(), "Select at least one visible column");
     let projected = columns
         .iter()
         .map(|c| ds.column(c).cloned())
         .collect::<Result<Vec<_>>>()?;
     let table = id("snap");
-    let name = format!("{}_{}", ds.display_name, &table[5..11]);
+    let name = name.unwrap_or_else(|| format!("{}_{}", ds.display_name, &table[5..11]));
     let p = predicate(ds, &filters)?;
     let fields = columns
         .iter()
         .map(|c| ident(c))
         .collect::<Vec<_>>()
         .join(", ");
-    let tx = conn.unchecked_transaction()?;
     // Assign preview ordinals after sorting. This also handles an actual data column named rowid.
     let sql = format!("CREATE TABLE {} AS SELECT *, row_number() OVER () - 1 AS {} FROM (SELECT {fields} FROM {}{}{})",
         ident(&table), ident(&ds.row_key), ds.relation(), p.sql, order(ds, &sort)?);
@@ -384,14 +400,13 @@ pub fn create_snapshot(
         ephemeral: true,
     };
     tx.execute(
-        "INSERT INTO ledger_entries VALUES (?,?,?)",
+        "INSERT INTO ledger_entries (id, dataset, snapshot) VALUES (?,?,?)",
         params![
             table,
             serde_json::to_string(&preview)?,
             serde_json::to_string(&snap)?
         ],
     )?;
-    tx.commit()?;
     Ok(snap)
 }
 
@@ -409,7 +424,7 @@ pub fn rename(conn: &Connection, ds: &mut Dataset, name: String) -> Result<()> {
     snap.display_name = name.trim().into();
     ds.display_name = snap.display_name.clone();
     conn.execute(
-        "UPDATE ledger_entries SET dataset=?, snapshot=? WHERE id=?",
+        "UPDATE ledger_entries SET dataset=?, snapshot=?, sql_alias=NULL WHERE id=?",
         params![
             serde_json::to_string(ds)?,
             serde_json::to_string(&snap)?,

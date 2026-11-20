@@ -66,7 +66,6 @@ export const MESSAGES_EN: Messages = {
 
   lang: {
     label: 'Language',
-    switchTooltip: 'Switch interface language (繁體中文 / English)',
   },
 
   app: {
@@ -77,7 +76,6 @@ export const MESSAGES_EN: Messages = {
   },
 
   topbar: {
-    openFile: 'Open file',
     openFileTooltip: 'Select one or more Parquet files',
     persistentBadge: 'Disk mode (progress saved)',
     persistentBadgeAvail: (avail: string) => `Disk mode [${avail} free] (progress saved)`,
@@ -87,13 +85,7 @@ export const MESSAGES_EN: Messages = {
     createSnapshot: 'Snapshot',
     createSnapshotTooltip: 'Create a snapshot from the current filters and sorting',
     columns: 'Columns',
-    columnsTooltip: 'Show / hide columns (this tab only)',
-    rowHeight: 'Row height',
-    rowHeightTooltip: 'Adjust row height (global)',
-    manageSnapshot: 'Snapshots',
-    manageSnapshotTooltip: 'Open / close snapshot manager',
-    changelog: 'Changelog',
-    changelogTooltip: 'View changelog',
+    columnsTooltip: 'Show / hide columns (this table only)',
   },
 
   changelog: {
@@ -102,9 +94,48 @@ export const MESSAGES_EN: Messages = {
       'Browse local Parquet files, filter across ledgers, save snapshots and export Parquet.',
   },
 
-  tabs: {
-    snapshot: 'Snapshot',
-    snapshotPreview: 'Snapshot preview',
+  notebook: {
+    title: 'Notebooks',
+    newBook: 'New',
+    newCell: '+ SQL cell',
+    cell: 'Query',
+    name: 'Notebook name',
+    open: 'Open notebook',
+    export: 'Export',
+    create: 'New notebook',
+    cellName: 'SQL cell name',
+    deleteCell: 'Delete SQL cell',
+    deleteCellConfirm: (name: string) => `Delete SQL cell “${name}”?`,
+    saved: 'Saved',
+    saving: 'Saving…',
+    saveFailed: 'Save failed · Retry',
+    memory: 'Saved in memory',
+    run: 'Run',
+    runSnapshot: 'Run and snapshot',
+    running: 'Running…',
+    placeholder: 'Enter SQL…',
+    sources: 'Available tables',
+    rows: 'rows',
+    prev: 'Previous page',
+    next: 'Next page',
+    delete: 'Delete notebook',
+    delConfirm: 'Delete this notebook?',
+    exported: 'Notebook exported',
+    openError: 'Could not open notebook',
+    fileType: 'LedgerView notebook',
+    snapCreated: 'Snapshot created',
+    stale: 'SQL changed. Run again to update.',
+  },
+  sidebar: {
+    title: 'Sources',
+    databases: 'Databases',
+    snapshots: 'Snapshots',
+    settings: 'Settings',
+    open: 'Open',
+    noSources: 'No databases open',
+    resize: 'Resize Sources panel',
+    collapse: 'Collapse Sources panel',
+    expand: 'Expand Sources panel',
   },
 
   empty: {
@@ -124,19 +155,14 @@ export const MESSAGES_EN: Messages = {
   },
 
   snapshot: {
-    paneTitle: 'Snapshots',
-    resizeTooltip: 'Drag to resize',
-    closeTooltip: 'Close snapshot panel',
     emptyLine1: 'No snapshots yet.',
-    emptyLine2: (createLabel: string) =>
-      `Open a file, apply filters and sorting, then click "${createLabel}" in the toolbar to create one.`,
     sourcePrefix: 'Source: ',
     noFilter: 'No filter',
     rows: (n: string) => `${n} rows`,
-    openPreviewTooltip: 'Click to open as a preview tab',
-    copy: 'Copy to clipboard',
+    closePreview: 'Close snapshot preview',
+    copy: 'Copy',
     rename: 'Rename',
-    delete: 'Delete',
+    delete: (name: string) => `Delete snapshot "${name}"`,
     downloadParquet: 'Download Parquet',
     created: (name: string, rows: string) => `Created snapshot "${name}" (${rows} rows)`,
     createFailed: (msg: string) => `Failed to create snapshot: ${msg}`,

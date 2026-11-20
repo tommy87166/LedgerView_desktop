@@ -18,8 +18,6 @@ interface UiState {
   /** 初始化錯誤訊息。 */
   dbError: string | null;
   toasts: Toast[];
-  /** 快照管理 pane 是否開啟（獨立於是否有開啟資料集）。 */
-  snapshotPaneOpen: boolean;
   /** 表格列高（行距），全域顯示偏好，持久化於 localStorage。 */
   rowHeight: number;
 
@@ -27,7 +25,6 @@ interface UiState {
   setDbError: (msg: string) => void;
   toast: (kind: ToastKind, message: string) => void;
   dismissToast: (id: string) => void;
-  toggleSnapshotPane: () => void;
   setRowHeight: (px: number) => void;
 }
 
@@ -36,7 +33,6 @@ export const useUi = create<UiState>((set) => ({
   persistent: null,
   dbError: null,
   toasts: [],
-  snapshotPaneOpen: false,
   rowHeight: getRowHeightPref(),
 
   setDbReady: (persistent) => set({ dbReady: true, persistent }),
@@ -44,7 +40,6 @@ export const useUi = create<UiState>((set) => ({
   toast: (kind, message) =>
     set((s) => ({ toasts: [...s.toasts, { id: randomId('t_'), kind, message }] })),
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
-  toggleSnapshotPane: () => set((s) => ({ snapshotPaneOpen: !s.snapshotPaneOpen })),
   setRowHeight: (px) => {
     setRowHeightPref(px);
     set({ rowHeight: px });

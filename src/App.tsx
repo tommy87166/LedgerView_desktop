@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { request } from './lib/native';
 import { useDatasets } from './store/datasets';
 import { useSnapshots } from './store/snapshots';
+import { restoreNotebooks } from './store/notebooks';
 import { useUi } from './store/ui';
 import { AppShell } from './components/layout/AppShell';
 import { Toasts } from './components/common/Toasts';
@@ -22,11 +23,12 @@ export function App() {
     let cancelled = false;
     (async () => {
       try {
-        const { persistent, catalog } = await request('restore', {});
+        const { persistent, catalog, notebooks } = await request('restore', {});
         if (cancelled) return;
         setDatasets(catalog.datasets);
         setSnapshots(catalog.snapshots);
         setDbReady(persistent);
+        restoreNotebooks(notebooks, persistent);
         for (const path of catalog.failed) toast('error', getMessages().app.reopenFailed(path));
       } catch (err) {
         if (cancelled) return;

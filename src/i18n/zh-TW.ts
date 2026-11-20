@@ -66,7 +66,6 @@ export const MESSAGES_ZH_TW = {
 
   lang: {
     label: '語言',
-    switchTooltip: '切換介面語言（繁體中文 / English）',
   },
 
   app: {
@@ -76,7 +75,6 @@ export const MESSAGES_ZH_TW = {
   },
 
   topbar: {
-    openFile: '開啟檔案',
     openFileTooltip: '選擇一或多個 Parquet 檔案',
     persistentBadge: '磁盤模式（保存進度）',
     persistentBadgeAvail: (avail: string) => `磁盤模式［可用 ${avail}］（保存進度）`,
@@ -86,13 +84,7 @@ export const MESSAGES_ZH_TW = {
     createSnapshot: '快照',
     createSnapshotTooltip: '以目前的篩選與排序建立快照',
     columns: '欄位',
-    columnsTooltip: '顯示／隱藏欄位（僅此分頁）',
-    rowHeight: '行距',
-    rowHeightTooltip: '調整列高（行距，全域）',
-    manageSnapshot: '快照管理',
-    manageSnapshotTooltip: '開啟／關閉快照管理',
-    changelog: 'Changelog',
-    changelogTooltip: '檢視更新紀錄',
+    columnsTooltip: '顯示／隱藏欄位（僅此資料表）',
   },
 
   changelog: {
@@ -100,9 +92,48 @@ export const MESSAGES_ZH_TW = {
     release: '桌面版支援本機 Parquet 查詢、跨檔篩選、快照和 Parquet 匯出。',
   },
 
-  tabs: {
-    snapshot: '快照',
-    snapshotPreview: '快照預覽',
+  notebook: {
+    title: '筆記本',
+    newBook: '新增',
+    newCell: '＋ SQL 區塊',
+    cell: '查詢',
+    name: '筆記本名稱',
+    open: '開啟筆記本',
+    export: '匯出',
+    create: '新增筆記本',
+    cellName: 'SQL 區塊名稱',
+    deleteCell: '刪除 SQL 區塊',
+    deleteCellConfirm: (name: string) => `刪除 SQL 區塊「${name}」？`,
+    saved: '已儲存',
+    saving: '儲存中…',
+    saveFailed: '儲存失敗 · 重試',
+    memory: '已存於記憶體',
+    run: '執行',
+    runSnapshot: '執行並快照',
+    running: '執行中…',
+    placeholder: '輸入 SQL…',
+    sources: '可查詢的資料表',
+    rows: '列',
+    prev: '上一頁',
+    next: '下一頁',
+    delete: '刪除筆記本',
+    delConfirm: '刪除這本筆記本？',
+    exported: '已匯出筆記本',
+    openError: '無法開啟筆記本',
+    fileType: 'LedgerView 筆記本',
+    snapCreated: '已建立快照',
+    stale: 'SQL 已修改，請重新執行',
+  },
+  sidebar: {
+    title: '來源',
+    databases: '資料庫',
+    snapshots: '快照',
+    settings: '設定',
+    open: '開啟',
+    noSources: '尚未開啟資料庫',
+    resize: '調整來源面板寬度',
+    collapse: '收合來源面板',
+    expand: '展開來源面板',
   },
 
   empty: {
@@ -122,19 +153,14 @@ export const MESSAGES_ZH_TW = {
   },
 
   snapshot: {
-    paneTitle: '快照管理',
-    resizeTooltip: '拖曳調整寬度',
-    closeTooltip: '關閉快照面板',
     emptyLine1: '尚無快照。',
-    emptyLine2: (createLabel: string) =>
-      `開啟檔案、套用篩選與排序後，點工具列的「${createLabel}」即可建立。`,
     sourcePrefix: '來源：',
     noFilter: '無篩選',
     rows: (n: string) => `${n} 列`,
-    openPreviewTooltip: '點選以預覽分頁開啟',
-    copy: '複製到剪貼簿',
+    closePreview: '關閉快照預覽',
+    copy: '複製',
     rename: '重新命名',
-    delete: '刪除',
+    delete: (name: string) => `刪除快照「${name}」`,
     downloadParquet: '下載 Parquet',
     created: (name: string, rows: string) => `已建立快照「${name}」（${rows} 列）`,
     createFailed: (msg: string) => `建立快照失敗：${msg}`,

@@ -2,6 +2,7 @@
 
 mod filter;
 mod ledger;
+mod notebooks;
 
 use anyhow::{Context, Result};
 use duckdb::{Connection, InterruptHandle};
@@ -23,6 +24,34 @@ use tauri::{Manager, State};
 )]
 enum Request {
     Restore,
+    CreateNotebook {
+        cell_name: String,
+    },
+    SaveNotebook {
+        book: notebooks::Notebook,
+    },
+    OpenNotebook {
+        path: PathBuf,
+    },
+    ExportNotebook {
+        id: String,
+        path: PathBuf,
+    },
+    DeleteNotebook {
+        id: String,
+    },
+    NotebookSources,
+    RunNotebook {
+        sql: String,
+        id: String,
+        cell: usize,
+        snapshot: bool,
+    },
+    NotebookPage {
+        id: String,
+        cell: usize,
+        start: u64,
+    },
     DiskSpace,
     FileSize {
         path: PathBuf,
@@ -144,7 +173,33 @@ impl Engine {
     fn dispatch(&self, conn: &Connection, request: Request) -> Result<Value> {
         use Request::*;
         let result = match request {
-            Restore => json!({"persistent": self.persistent, "catalog": ledger::restore(conn)?}),
+            Restore => {
+                json!({"persistent": self.persistent, "catalog": ledger::restore(conn)?, "notebooks": notebooks::list(conn)?})
+            }
+            CreateNotebook { cell_name } => json!(notebooks::create(conn, cell_name)?),
+            SaveNotebook { book } => {
+                notebooks::save(conn, &book)?;
+                Value::Null
+            }
+            OpenNotebook { path } => json!(notebooks::open(conn, &path)?),
+            ExportNotebook { id, path } => {
+                notebooks::export(conn, &id, &path)?;
+                Value::Null
+            }
+            DeleteNotebook { id } => {
+                notebooks::delete(conn, &id)?;
+                Value::Null
+            }
+            NotebookSources => json!(notebooks::source_names(conn)?),
+            RunNotebook {
+                id,
+                cell,
+                sql,
+                snapshot,
+            } => notebooks::run(conn, &id, cell, &sql, snapshot)?,
+            NotebookPage { id, cell, start } => {
+                json!(notebooks::result_page(conn, &id, cell, start)?)
+            }
             DiskSpace => json!(fs2::available_space(&self.directory).ok()),
             FileSize { path } => json!(fs::metadata(path)?.len()),
             Open { path } => json!(ledger::open(conn, &path)?),

@@ -35,13 +35,25 @@ function base(size: number, props: SVGProps<SVGSVGElement>) {
   };
 }
 
-/** 開啟檔案（匯入 / 上傳）。 */
-export function IconOpen({ size = 15, ...props }: IconProps) {
+export function IconSidebar({ collapsed, size = 17, ...props }: IconProps & { collapsed: boolean }) {
   return (
-    <svg {...base(size, props)}>
-      <path d="M12 3v10" />
-      <path d="M8 7l4-4 4 4" />
-      <path d="M4 14v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
+    <svg {...base(size, props)} aria-hidden="true">
+      <rect x="2.5" y="4" width="19" height="16" rx="2" />
+      <path d="M8.5 4v16" />
+      <path d={collapsed ? 'm14 9 3 3-3 3' : 'm16 9-3 3 3 3'} />
+    </svg>
+  );
+}
+
+export function IconNotebook({ size = 16, ...props }: IconProps) {
+  return <svg {...base(size, props)} aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 3v18M3 8h4M3 15h4" /></svg>;
+}
+
+export function IconDatabase({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)} aria-hidden="true">
+      <ellipse cx="12" cy="5.5" rx="7.5" ry="3" />
+      <path d="M4.5 5.5v12c0 4 15 4 15 0v-12M4.5 11.5c0 4 15 4 15 0" />
     </svg>
   );
 }
@@ -56,54 +68,11 @@ export function IconSnapshot({ size = 15, ...props }: IconProps) {
   );
 }
 
-/** 快照管理（清單面板）。 */
-export function IconManage({ size = 15, ...props }: IconProps) {
+export function IconSettings({ size = 17, ...props }: IconProps) {
   return (
-    <svg {...base(size, props)}>
-      <rect x="4" y="4.5" width="16" height="6" rx="1.2" />
-      <rect x="4" y="13.5" width="16" height="6" rx="1.2" />
-    </svg>
-  );
-}
-
-/** 複製到剪貼簿。 */
-export function IconCopy({ size = 14, ...props }: IconProps) {
-  return (
-    <svg {...base(size, props)}>
-      <rect x="9" y="9" width="11" height="11" rx="1.5" />
-      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
-    </svg>
-  );
-}
-
-/** 重新命名（鉛筆）。 */
-export function IconRename({ size = 14, ...props }: IconProps) {
-  return (
-    <svg {...base(size, props)}>
-      <path d="M4 20h4L19 9l-4-4L4 16v4z" />
-      <path d="M14 6l4 4" />
-    </svg>
-  );
-}
-
-/** 刪除（垃圾桶）。 */
-export function IconTrash({ size = 14, ...props }: IconProps) {
-  return (
-    <svg {...base(size, props)}>
-      <path d="M4 7h16" />
-      <path d="M9 7V4h6v3" />
-      <path d="M6 7l1 13h10l1-13" />
-    </svg>
-  );
-}
-
-/** 下載。 */
-export function IconDownload({ size = 14, ...props }: IconProps) {
-  return (
-    <svg {...base(size, props)}>
-      <path d="M12 3v11" />
-      <path d="M8 10l4 4 4-4" />
-      <path d="M4 20h16" />
+    <svg {...base(size, props)} aria-hidden="true">
+      <path d="m10 3-.6 2.2-1.8 1-2.2-.6-2 3.4L5 10.6v2.8l-1.6 1.6 2 3.4 2.2-.6 1.8 1 .6 2.2h4l.6-2.2 1.8-1 2.2.6 2-3.4-1.6-1.6v-2.8l1.6-1.6-2-3.4-2.2.6-1.8-1L14 3z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }
@@ -118,18 +87,6 @@ export function IconClearFilter({ size = 14, ...props }: IconProps) {
   );
 }
 
-/** 更新紀錄（文件 + 條列）。 */
-export function IconChangelog({ size = 14, ...props }: IconProps) {
-  return (
-    <svg {...base(size, props)}>
-      <path d="M6 3h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
-      <path d="M14 3v4h4" />
-      <path d="M8 12h8" />
-      <path d="M8 16h5" />
-    </svg>
-  );
-}
-
 /** 欄位顯示/隱藏（表格欄）。 */
 export function IconColumns({ size = 14, ...props }: IconProps) {
   return (
@@ -137,19 +94,6 @@ export function IconColumns({ size = 14, ...props }: IconProps) {
       <rect x="3" y="4" width="18" height="16" rx="1.3" />
       <path d="M9 4v16" />
       <path d="M15 4v16" />
-    </svg>
-  );
-}
-
-/** 行距（列高）：上下兩條橫線 + 中間上下箭頭。 */
-export function IconRowHeight({ size = 14, ...props }: IconProps) {
-  return (
-    <svg {...base(size, props)}>
-      <path d="M4 5h16" />
-      <path d="M4 19h16" />
-      <path d="M12 8v8" />
-      <path d="M9.5 10.5 12 8l2.5 2.5" />
-      <path d="M9.5 13.5 12 16l2.5-2.5" />
     </svg>
   );
 }

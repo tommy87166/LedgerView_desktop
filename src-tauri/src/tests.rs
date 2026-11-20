@@ -324,3 +324,154 @@ fn exported_snapshot_preserves_native_types_nulls_and_projected_order() -> Resul
     assert_eq!(s.send(json!({"type":"clipboard","id":snap["id"]}))?, "posted\tdebit\tmemo\tid\n2026-02-03 04:05:06.789\t123456789012345678.123456\t\t18446744073709551615");
     Ok(())
 }
+
+#[test]
+fn notebook_file_roundtrip_and_restart() -> Result<()> {
+    let mut s = Session::new()?;
+    let mut book = s.send(json!({"type":"createNotebook","cellName":"查詢 1"}))?;
+    book["name"] = json!("旅費核對");
+    book["cells"] =
+        json!([{"name":"單號","sql":"SELECT 1;"},{"name":"合計","sql":"SELECT '台北';"}]);
+    s.send(json!({"type":"saveNotebook","book":book}))?;
+    let path = s.dir.path().join("review.lvnb.json");
+    s.send(json!({"type":"exportNotebook","id":book["id"],"path":path}))?;
+    let file: Value = serde_json::from_slice(&fs::read(&path)?)?;
+    assert_eq!(file["format"], "ledgerview-notebook");
+    assert_eq!(file["cells"], book["cells"]);
+    assert!(file.get("id").is_none());
+    let copy = s.send(json!({"type":"openNotebook","path":path}))?;
+    assert_ne!(copy["id"], book["id"]);
+    assert_eq!(copy["name"], "旅費核對 (2)");
+    assert_eq!(copy["cells"], book["cells"]);
+    s.send(json!({"type":"deleteNotebook","id":copy["id"]}))?;
+    fs::write(
+        &path,
+        r#"{"format":"ledgerview-notebook","version":2,"name":"test","cells":[]}"#,
+    )?;
+    assert!(s.send(json!({"type":"openNotebook","path":path})).is_err());
+    let dir = s.dir.path().join("state");
+    drop(s.engine);
+    s.engine = Engine::new(dir)?;
+    assert_eq!(
+        s.send(json!({"type":"restore"}))?["notebooks"],
+        json!([book])
+    );
+    Ok(())
+}
+
+#[test]
+fn notebook_query_snapshot_paging_and_failure_rollback() -> Result<()> {
+    let s = Session::new()?;
+    s.file("總帳.parquet", "SELECT range AS n FROM range(205)")?;
+    let book = s.send(json!({"type":"createNotebook","cellName":"查詢 1"}))?;
+    let id = &book["id"];
+    let run = |sql: &str, snapshot: bool| {
+        s.send(json!({"type":"runNotebook","id":id,"cell":0,"sql":sql,"snapshot":snapshot}))
+    };
+    let result = run(
+        r#"SELECT n, uuid() AS token FROM "總帳" ORDER BY n DESC;"#,
+        true,
+    )?;
+    assert_eq!(result["total"], 205);
+    assert_eq!(result["rows"].as_array().unwrap().len(), 100);
+    assert_eq!(result["rows"][0][1], "204");
+    let snapshot = &result["snapshot"];
+    assert_eq!(snapshot["displayName"], "SQL 1 · 查詢 1");
+    let persisted = s.page(&snapshot["id"], json!({}), json!([]), json!(["n", "token"]))?;
+    assert_eq!(persisted[0], result["rows"][0]); // volatile expressions were evaluated once
+    let last = s.send(json!({"type":"notebookPage","id":id,"cell":0,"start":200}))?;
+    assert_eq!(last.as_array().unwrap().len(), 5);
+    assert_eq!(last[4][1], "0");
+    assert!(run("SELECT 1; DROP TABLE ledger_entries", false).is_err());
+    assert!(run("DELETE FROM ledger_entries", false).is_err());
+    assert_eq!(
+        s.send(json!({"type":"notebookPage","id":id,"cell":0,"start":200}))?,
+        last
+    );
+    let empty = run(r#"SELECT * FROM "SQL 1 · 查詢 1" WHERE false"#, true)?;
+    assert_eq!(empty["total"], 0);
+    assert_eq!(empty["columns"].as_array().unwrap().len(), 2);
+    assert_eq!(empty["snapshot"]["displayName"], "SQL 1 · 查詢 1 (2)");
+    s.send(json!({"type":"deleteNotebook","id":id}))?;
+    assert!(s
+        .send(json!({"type":"notebookPage","id":id,"cell":0,"start":0}))
+        .is_err());
+    assert_eq!(s.count(&snapshot["id"], json!({}))?, 205);
+    Ok(())
+}
+
+#[test]
+fn notebook_aliases_survive_missing_and_closed_duplicate_sources() -> Result<()> {
+    let s = Session::new()?;
+    let first = s.file("科目.parquet", "SELECT 1 AS n")?;
+    let nested = s.dir.path().join("other");
+    fs::create_dir(&nested)?;
+    let path = nested.join("科目.parquet");
+    write_file(&path, "SELECT 2 AS n")?;
+    s.send(json!({"type":"open","path":path}))?;
+    assert_eq!(
+        s.send(json!({"type":"notebookSources"}))?,
+        json!(["科目", "科目 (2)"])
+    );
+    fs::write(first["sourceFile"].as_str().unwrap(), b"invalid parquet")?;
+    assert_eq!(
+        s.send(json!({"type":"notebookSources"}))?,
+        json!(["科目 (2)"])
+    );
+    fs::remove_file(first["sourceFile"].as_str().unwrap())?;
+    assert_eq!(
+        s.send(json!({"type":"notebookSources"}))?,
+        json!(["科目 (2)"])
+    );
+    s.send(json!({"type":"remove","id":first["id"]}))?;
+    let book = s.send(json!({"type":"createNotebook","cellName":"查詢 1"}))?;
+    let query = |sql: &str| {
+        s.send(json!({"type":"runNotebook","id":book["id"],"cell":0,"sql":sql,"snapshot":false}))
+    };
+    assert!(query(r#"FROM "科目""#).is_err());
+    assert_eq!(query(r#"FROM "科目 (2)""#)?["rows"][0][1], "2");
+    Ok(())
+}
+
+#[test]
+fn deleting_and_renaming_cells_preserves_other_results_and_snapshots() -> Result<()> {
+    let s = Session::new()?;
+    let mut book = s.send(json!({"type":"createNotebook","cellName":"First"}))?;
+    let id = book["id"].clone();
+    // A notebook written by the previous version has no explicit cell slots.
+    book["cells"] = json!([{"name":"First","sql":"SELECT 1"},{"name":"Second","sql":"SELECT i FROM range(102) r(i) ORDER BY i"}]);
+    s.send(json!({"type":"saveNotebook","book":book}))?;
+    let run = |slot: usize, sql: &Value| {
+        s.send(json!({"type":"runNotebook","id":id,"cell":slot,"sql":sql,"snapshot":true}))
+    };
+    let first = run(0, &book["cells"][0]["sql"])?;
+    run(1, &book["cells"][1]["sql"])?;
+    let mut remaining = book["cells"][1].clone();
+    remaining["slot"] = json!(1);
+    remaining["name"] = json!("明細");
+    book["cells"] = json!([remaining]);
+    s.send(json!({"type":"saveNotebook","book":book}))?;
+    let page = |slot: usize| s.send(json!({"type":"notebookPage","id":id,"cell":slot,"start":100}));
+    assert!(page(0).is_err());
+    assert_eq!(page(1)?[0][1], "100");
+    assert_eq!(
+        run(1, &remaining["sql"])?["snapshot"]["displayName"],
+        "SQL 1 · 明細"
+    );
+    assert_eq!(s.count(&first["snapshot"]["id"], json!({}))?, 1);
+    let path = s.dir.path().join("remaining.lvnb.json");
+    s.send(json!({"type":"exportNotebook","id":id,"path":path}))?;
+    let file: Value = serde_json::from_slice(&fs::read(&path)?)?;
+    assert_eq!(
+        file["cells"],
+        json!([{"name":"明細","sql":remaining["sql"]}])
+    );
+    book["cells"] = json!([]);
+    s.send(json!({"type":"saveNotebook","book":book}))?;
+    assert!(page(1).is_err());
+    assert_eq!(
+        s.send(json!({"type":"restore"}))?["notebooks"][0]["cells"],
+        json!([])
+    );
+    Ok(())
+}

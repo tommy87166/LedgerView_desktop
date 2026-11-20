@@ -2,7 +2,7 @@
 // 採手動 get/set（不依賴 zustand persist），保持 store 無依賴、便於單元測試。
 
 export interface RowHeightPreset {
-  key: string;
+  key: 'compact' | 'standard' | 'relaxed' | 'wide';
   label: string;
   px: number;
 }

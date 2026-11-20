@@ -17,7 +17,7 @@ export function ColumnPicker({ dataset, onClose }: Props) {
 
   useEffect(() => {
     const onDocMouse = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      if (!ref.current?.parentElement?.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();

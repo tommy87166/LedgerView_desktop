@@ -4,6 +4,8 @@ import type { DatasetMeta } from '../types/dataset';
 import type { FilterModel, SortModel } from '../types/filters';
 import type { SnapshotMeta } from '../types/snapshot';
 
+import type { Notebook, StoredNotebook, QueryResult } from '../types/notebook';
+
 export interface Aggregate {
   sum: string | null;
   avg: string | null;
@@ -17,7 +19,15 @@ interface Catalog {
 type ById = { id: string };
 type Filtered = ById & { filters: FilterModel };
 interface Commands {
-  restore: [{}, { persistent: boolean; catalog: Catalog }];
+  restore: [{}, { persistent: boolean; catalog: Catalog; notebooks: StoredNotebook[] }];
+  createNotebook: [{ cellName: string }, StoredNotebook];
+  saveNotebook: [{ book: Notebook }, void];
+  openNotebook: [{ path: string }, StoredNotebook];
+  exportNotebook: [ById & { path: string }, void];
+  deleteNotebook: [ById, void];
+  notebookSources: [{}, string[]];
+  runNotebook: [ById & { cell: number; sql: string; snapshot: boolean }, QueryResult];
+  notebookPage: [ById & { cell: number; start: number }, QueryResult['rows']];
   diskSpace: [{}, number | null];
   fileSize: [{ path: string }, number];
   open: [{ path: string }, DatasetMeta];
