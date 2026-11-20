@@ -10,8 +10,9 @@ fn write_file(path: &Path, query: &str) -> Result<()> {
 }
 
 struct Session {
-    dir: TempDir,
     engine: Engine,
+    // Close DuckDB before TempDir tries to remove the workspace on Windows.
+    dir: TempDir,
 }
 impl Session {
     fn new() -> Result<Self> {
@@ -41,6 +42,42 @@ fn bundled_duckdb_version() -> Result<()> {
     let conn = Connection::open_in_memory()?;
     let version: String = conn.query_row("SELECT version()", [], |row| row.get(0))?;
     assert_eq!(version, "v2.0.0");
+    Ok(())
+}
+
+#[test]
+fn unavailable_workspace_runs_in_memory_and_loses_changes_on_restart() -> Result<()> {
+    let tmp = tempdir()?;
+    let blocked = tmp.path().join("ordinary-file");
+    fs::write(&blocked, b"existing file")?;
+    let directory = blocked.join("workspace");
+    let session = Session {
+        engine: Engine::new(directory.clone())?,
+        dir: tmp,
+    };
+    let book = session.send(json!({"type":"createNotebook","cellName":"SQL"}))?;
+    let restored = session.send(json!({"type":"restore"}))?;
+    assert_eq!(restored["persistent"], false);
+    assert_eq!(restored["notebooks"][0]["id"], book["id"]);
+    drop(session.engine);
+    let reopened = Engine::new(directory)?;
+    let fresh = reopened.execute(Request::Restore, "restart".into(), false, None)?;
+    assert_eq!(fresh["notebooks"], json!([]));
+    assert_eq!(fs::read(blocked)?, b"existing file");
+    Ok(())
+}
+
+#[test]
+fn corrupt_existing_catalog_reports_an_error_and_preserves_the_file() -> Result<()> {
+    let dir = tempdir()?;
+    let catalog = dir.path().join("ledger.duckdb");
+    let original = b"This is not a DuckDB catalog";
+    fs::write(&catalog, original)?;
+    let error = Engine::new(dir.path().to_owned())
+        .err()
+        .expect("corrupt catalog must fail to open");
+    assert!(error.to_string().contains("Opening LedgerView catalog"));
+    assert_eq!(fs::read(catalog)?, original);
     Ok(())
 }
 

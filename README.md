@@ -33,6 +33,15 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 原生整合測試會建立真實 Parquet，驗證篩選語意、精度、跨檔清單、大檔分頁、快照重開與匯出。開發時可在 WebView console 呼叫 `sqlLog()` 查看原生引擎的 SQL 與操作耗時，`sqlLog(false)` 關閉。
 
+### 從 GitHub 下載桌面版
+
+推送到 `main`、向 `main` 提出 pull request，或手動執行工作流程時，GitHub Actions 會在 Windows 和 macOS 各自建置桌面版並執行前端與 Rust 測試。開啟成功的執行紀錄，在 **Artifacts** 下載對應平台的檔案。[桌面版 CI](https://github.com/tommy87166/LedgerView_desktop/actions/workflows/desktop.yml)
+
+| 平台 | 下載檔 | 使用方式 |
+| --- | --- | --- |
+| Windows x64 | `LedgerView.exe` | 直接執行。DuckDB 已編入執行檔，介面使用系統的 Microsoft Edge WebView2 Runtime。 |
+| macOS Apple Silicon | `LedgerView-macOS-arm64.app.zip` | 解壓縮後開啟 `LedgerView.app`。此版本使用 ad hoc 簽章，尚未通過 Apple 公證。 |
+
 ## 技術選型
 
 | 層級 | 選型 |

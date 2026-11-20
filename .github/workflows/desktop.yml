@@ -1,0 +1,82 @@
+name: Desktop tests and builds
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Windows x64
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            bundle: --no-bundle
+            artifact: src-tauri/target/x86_64-pc-windows-msvc/release/LedgerView.exe
+          - platform: macOS Apple Silicon
+            runner: macos-15
+            target: aarch64-apple-darwin
+            bundle: --bundles app
+            artifact: LedgerView-macOS-arm64.app.zip
+    env:
+      RUSTUP_TOOLCHAIN: stable
+      # Use the static MSVC runtime for the executable and its bundled C++ code.
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: rustup update stable --no-self-update
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Run frontend tests
+        run: npm test
+      - name: Type-check and build the desktop app
+        run: npm run tauri -- build --ci --target ${{ matrix.target }} ${{ matrix.bundle }} -- --locked
+      - name: Run Rust integration tests with bundled DuckDB
+        run: cargo test --manifest-path src-tauri/Cargo.toml --release --locked --target ${{ matrix.target }} --features tauri/custom-protocol
+      - name: Verify the portable Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Get-Item '${{ matrix.artifact }}'
+          $imports = & llvm-readobj --file-headers --coff-imports $exe.FullName | Out-String
+          if ($LASTEXITCODE -ne 0 -or $imports -notmatch 'IMAGE_FILE_MACHINE_AMD64') {
+            throw 'Expected an x64 Windows executable'
+          }
+          if ($imports -match '(?im)^\s*Name: (duckdb|WebView2Loader|VCRUNTIME\w*|MSVCP\w*)\.dll\s*$') {
+            throw "Portable executable has an external runtime dependency: $($Matches[1])"
+          }
+      - name: Verify and archive the macOS app
+        if: runner.os == 'macOS'
+        run: |
+          app="src-tauri/target/${{ matrix.target }}/release/bundle/macos/LedgerView.app"
+          test -x "$app/Contents/MacOS/LedgerView"
+          lipo -verify_arch arm64 "$app/Contents/MacOS/LedgerView"
+          codesign --verify --deep --strict "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "${{ matrix.artifact }}"
+      - name: Upload the tested build
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ matrix.artifact }}
+          archive: false
+          if-no-files-found: error
