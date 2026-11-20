@@ -167,7 +167,7 @@ export const MESSAGES_ZH_TW = {
   },
 
   empty: {
-    hint: '選擇或拖入 Parquet 檔案開始查帳。',
+    hint: '選擇或拖入 Parquet 檔案檢視資料。',
   },
 
   status: {

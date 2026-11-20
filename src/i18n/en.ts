@@ -169,7 +169,7 @@ export const MESSAGES_EN: Messages = {
   },
 
   empty: {
-    hint: 'Open or drop Parquet files to view a ledger.',
+    hint: 'Select or drop a Parquet file to view its data.',
   },
 
   status: {
