@@ -118,4 +118,4 @@ MCP 查詢使用獨立的 DuckDB 實例，直接讀取已開啟的原始 Parquet
 
 Windows 會在原路徑替換可攜式 EXE。macOS 會替換已解壓縮的 LedgerView.app。更新來源需可匿名讀取，現有 1.0.0 使用者需先手動升級一次。
 
-發布維護者推送與程式版本一致的數字標籤（例如 `1.1.0`）時，GitHub Actions 會測試兩個平台，簽署更新檔，並將下載檔、簽章和 `latest.json` 一併發布。正式簽署私鑰存放在 Actions Secret `LEDGERVIEW_UPDATE_SIGNING_KEY`；對應公鑰內建於程式。開發分支與 PR 使用一次性測試金鑰驗證更新流程。
+發布維護者推送與程式版本一致的數字標籤（例如 `1.1.0`）時，GitHub Actions 會測試兩個平台，簽署更新檔，將簽章寫入 `latest.json`，再發布下載檔與這份更新清單。正式簽署私鑰存放在 Actions Secret `LEDGERVIEW_UPDATE_SIGNING_KEY`；對應公鑰內建於程式。開發分支與 PR 使用一次性測試金鑰驗證更新流程。

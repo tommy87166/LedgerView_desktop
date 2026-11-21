@@ -104,8 +104,11 @@ export const MESSAGES_EN: Messages = {
   },
   changelog: {
     title: 'Changelog',
-    release:
-      'Check GitHub for new versions and install signed updates from Settings.',
+    releases: {
+      '1.1.1': 'View previous releases in Settings. Update signatures are included in latest.json.',
+      '1.1.0': 'Check GitHub for new versions and install signed updates from Settings.',
+      '1.0.0': 'Browse local Parquet files, query data in SQL notebooks, and export snapshots to Excel or Parquet. Connect MCP clients to the desktop workspace.',
+    },
   },
 
   mcp: {

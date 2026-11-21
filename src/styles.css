@@ -387,9 +387,8 @@ a:hover {
 .workspace-setting {
   margin: 18px 0;
 }
-.settings-dialog details {
+.update-settings {
   border-top: 1px solid var(--lv-border);
-  padding-top: 12px;
 }
 .settings-dialog summary {
   cursor: pointer;

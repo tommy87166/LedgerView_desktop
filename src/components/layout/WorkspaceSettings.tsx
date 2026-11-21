@@ -12,7 +12,6 @@ import { useDiagnostics } from '../../store/diagnostics';
 import { McpSettings } from './McpSettings';
 
 import { UpdateSettings } from './UpdateSettings';
-import { version } from '../../../package.json';
 
 export function WorkspaceSettings() {
   const t = useMessages();
@@ -97,10 +96,12 @@ export function WorkspaceSettings() {
         <UpdateSettings />
         <details>
           <summary>{t.changelog.title}</summary>
-          <div className="changelog-entry">
-            <strong>v{version}</strong>
-            <p>{t.changelog.release}</p>
-          </div>
+          {Object.entries(t.changelog.releases).map(([version, note]) => (
+            <div className="changelog-entry" key={version}>
+              <strong>v{version}</strong>
+              <p>{note}</p>
+            </div>
+          ))}
         </details>
       </dialog>
     </>

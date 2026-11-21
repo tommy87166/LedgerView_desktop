@@ -103,7 +103,11 @@ export const MESSAGES_ZH_TW = {
   },
   changelog: {
     title: '更新紀錄',
-    release: '新增 GitHub 版本檢查與簽章更新，可從設定安裝新版並重新啟動。',
+    releases: {
+      '1.1.1': '設定中可展開歷次更新紀錄。更新檔簽章收錄在 latest.json。',
+      '1.1.0': '新增 GitHub 版本檢查與簽章更新，可從設定安裝新版並重新啟動。',
+      '1.0.0': '檢視本機 Parquet、以 SQL 筆記本查詢資料，並將快照匯出為 Excel 或 Parquet。支援 MCP 連線至桌面工作區。',
+    },
   },
 
   mcp: {

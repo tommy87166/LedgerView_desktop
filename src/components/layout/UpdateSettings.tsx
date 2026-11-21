@@ -8,7 +8,7 @@ export function UpdateSettings() {
   const t = useMessages().updates;
   const { phase, version, error } = useUpdates();
   return (
-    <section aria-label={t.title}>
+    <section className="update-settings" aria-label={t.title}>
       <div className="workspace-setting">
         <span>{t.title} · {installed}</span>
         {version
