@@ -2419,13 +2419,16 @@ dependencies = [
  "axum",
  "calamine",
  "chrono",
+ "dirs",
  "duckdb",
  "dunce",
  "fs2",
+ "mcpmesh-local-api",
  "open",
  "reqwest",
  "rmcp",
  "rust_xlsxwriter",
+ "rustix",
  "schemars 1.2.3",
  "serde",
  "serde_json",
@@ -2637,6 +2640,31 @@ name = "matchit"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
+
+[[package]]
+name = "mcpmesh-codec"
+version = "0.58.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80e41ff3d035f869c7ada92373048005dce3848db451296850350504757cd64a"
+dependencies = [
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "mcpmesh-local-api"
+version = "0.58.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0911329bc56f30f16165de95e28281ce32825a5fb0c5b175839b5a3bc4dea4fc"
+dependencies = [
+ "mcpmesh-codec",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "memchr"
@@ -3630,7 +3658,6 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "rand",
- "reqwest",
  "rmcp-macros",
  "schemars 1.2.3",
  "serde",

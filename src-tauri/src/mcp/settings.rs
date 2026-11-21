@@ -132,6 +132,7 @@ impl Control {
             .with_context(|| format!("Opening MCP on 127.0.0.1:{}", settings.port))?;
         let address = listener.local_addr()?;
         let cache = cache::Cache::open(cache_root)?;
+        let local = stdio::Listener::bind(cache_root).context("Opening local MCP endpoint")?;
         // Reveal a new token only after the listener and cache have opened.
         let mut info = settings.info(None, engine.persistent);
         let token = match settings.token {
@@ -162,11 +163,13 @@ impl Control {
         });
         let url = format!("http://{address}/mcp");
         info.url = Some(url.clone());
+        let local_server = tokio::spawn(local.serve(core.clone()));
         *running = Some(Running {
             url,
             token,
             core,
             server,
+            local_server,
         });
         Ok(info)
     }
@@ -257,18 +260,11 @@ pub(crate) async fn mcp_copy_connection(
 ) -> Result<(), String> {
     let running = state.0.lock().await;
     let r = running.as_ref().ok_or("MCP is disabled")?;
-    let token = r.token.lock().unwrap();
     let config = if claude_stdio.unwrap_or(false) {
         let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-        let port = reqwest::Url::parse(&r.url)
-            .map_err(|e| e.to_string())?
-            .port_or_known_default()
-            .ok_or("Missing MCP port")?;
-        json!({"mcpServers":{"LedgerView":{
-            "command":executable, "args":["--mcp-stdio"],
-            "env":{(super::stdio::PORT_ENV):port.to_string(), (super::stdio::TOKEN_ENV):token.as_str()}
-        }}})
+        json!({"mcpServers":{"LedgerView":{"command":executable, "args":["--mcp-stdio"]}}})
     } else {
+        let token = r.token.lock().unwrap();
         json!({"url":r.url, "headers":{"Authorization":format!("Bearer {token}")}})
     };
     app.clipboard()

@@ -98,10 +98,10 @@ export const MESSAGES_EN: Messages = {
     copyClaude: 'Copy Claude Desktop config (stdio)',
     enable: 'Enable local MCP', on: 'On', off: 'Off', save: 'Save',
     invalidPort: 'Enter a whole number from 1 to 65535, or leave blank for 18476.',
-    token: 'Token', firstEnable: 'Created on first start', hidden: 'Token hidden', regenerate: 'Regenerate',
+    token: 'HTTP token', firstEnable: 'Created on first start', hidden: 'Token hidden', regenerate: 'Regenerate',
     regenerateConfirm: 'Regenerate the token? Connected clients will need the new connection settings.',
     memory: 'Memory mode uses the default port and keeps the token until LedgerView closes.',
-    copy: 'Copy connection settings', copied: 'Connection settings copied', preview: 'Preview',
+    copy: 'Copy HTTP settings', copied: 'Connection settings copied', preview: 'Preview',
   },
   diagnostics: {
     title: 'Diagnostic log',

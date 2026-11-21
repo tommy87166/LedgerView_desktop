@@ -96,10 +96,10 @@ export const MESSAGES_ZH_TW = {
     copyClaude: '複製 Claude Desktop 設定（stdio）',
     enable: '啟用本機 MCP', on: '開啟', off: '關閉', save: '儲存',
     invalidPort: '請輸入 1 至 65535 的整數，留白使用 18476。',
-    token: '權杖', firstEnable: '首次開啟時產生', hidden: '權杖已隱藏', regenerate: '重新產生',
+    token: 'HTTP 權杖', firstEnable: '首次開啟時產生', hidden: '權杖已隱藏', regenerate: '重新產生',
     regenerateConfirm: '重新產生權杖後，現有用戶端需要更新連線設定。要繼續嗎？',
     memory: '記憶體模式使用預設連接埠，權杖只保留到程式關閉。',
-    copy: '複製連線設定', copied: '已複製連線設定', preview: '預覽',
+    copy: '複製 HTTP 設定', copied: '已複製連線設定', preview: '預覽',
   },
   diagnostics: {
     title: '診斷日誌',

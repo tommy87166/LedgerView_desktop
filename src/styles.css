@@ -119,8 +119,7 @@ a:hover {
 }
 .quiet-button,
 .item-name,
-.open-source,
-.snapshot-actions button {
+.open-source {
   border: 0;
   font: inherit;
   background: transparent;
@@ -272,9 +271,6 @@ a:hover {
   padding: 0 4px 0 26px;
 }
 .snapshot-actions button {
-  padding: 3px 4px;
-  border-radius: 3px;
-  font-size: 11px;
   color: #554f4a;
 }
 .snapshot-actions button:hover {
@@ -1022,7 +1018,7 @@ input[type='number']:not(.ag-input-field-input):focus {
 .mcp-switch[aria-checked="true"] span { background: var(--lv-primary); }
 .mcp-switch[aria-checked="true"] span::after { transform: translateX(12px); }
 .mcp-switch:disabled { opacity: .55; cursor: default; }
-.mcp-setting { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.mcp-setting { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; align-items: baseline; }
 .mcp-actions, .mcp-credential { flex-wrap: wrap; }
 .mcp-setting input { width: 7em; }
 .mcp-setting code { overflow-wrap: anywhere; user-select: text; }

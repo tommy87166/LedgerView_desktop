@@ -41,11 +41,14 @@ impl Server {
                 .await
         });
         let url = format!("http://{host}/mcp");
+        let local = stdio::Listener::bind(&dir.path().join("cache"))?;
+        let local_server = tokio::spawn(local.serve(core.clone()));
         let running = Running {
             url: url.clone(),
             token,
             core: core.clone(),
             server,
+            local_server,
         };
         Ok(Self {
             url,
@@ -129,6 +132,7 @@ async fn http_handshake_lists_tools_and_validates_bearer_host_and_origin() -> Re
         "query",
         "result_page",
         "save_snapshot",
+        "export_excel",
         "list_notebooks",
         "edit_notebook",
     ] {
@@ -386,14 +390,15 @@ async fn quoted_source_names_read_only_the_registered_file() -> Result<()> {
 async fn stdio_client_lists_desktop_tools_and_queries_the_same_workspace() -> Result<()> {
     let s = Server::new().await?;
     s.file("sample.parquet")?;
-    let port = reqwest::Url::parse(&s.url)?.port().unwrap();
+    let cache_root = s._dir.path().join("cache");
     // CI also checks the released GUI executable inherits the client's pipes.
     if let Some(executable) = std::env::var_os("LEDGERVIEW_TEST_STDIO_BIN") {
         use std::process::Stdio;
         let mut child = tokio::process::Command::new(executable)
             .arg("--mcp-stdio")
-            .env(stdio::PORT_ENV, port.to_string())
-            .env(stdio::TOKEN_ENV, "test-token")
+            .env_remove("LEDGERVIEW_MCP_TOKEN")
+            .env_remove("LEDGERVIEW_MCP_PORT")
+            .env("LEDGERVIEW_MCP_CACHE_DIR", &cache_root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .kill_on_drop(true)
@@ -404,11 +409,8 @@ async fn stdio_client_lists_desktop_tools_and_queries_the_same_workspace() -> Re
         return Ok(());
     }
     let (client, bridge) = tokio::io::duplex(65536);
-    let run = tokio::spawn(stdio::serve(
-        port,
-        "test-token".into(),
-        tokio::io::split(bridge),
-    ));
+    let run =
+        tokio::spawn(async move { stdio::bridge(&cache_root, tokio::io::split(bridge)).await });
     let (input, output) = tokio::io::split(client);
     exercise_stdio(input, output).await?;
     tokio::time::timeout(Duration::from_secs(10), run).await???;
@@ -450,11 +452,12 @@ async fn exercise_stdio(
                     .write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
                     .await?;
             }
-            2 => assert!(reply["result"]["tools"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|tool| tool["name"] == "edit_notebook")),
+            2 => {
+                let tools = reply["result"]["tools"].as_array().unwrap();
+                for name in ["edit_notebook", "export_excel"] {
+                    assert!(tools.iter().any(|tool| tool["name"] == name));
+                }
+            }
             _ => assert_eq!(
                 reply["result"]["structuredContent"]["rows"],
                 json!([["125"]])
@@ -462,5 +465,112 @@ async fn exercise_stdio(
         }
     }
     output.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn excel_tool_exports_full_results_and_snapshots_only_inside_workspace() -> Result<()> {
+    use calamine::{open_workbook, Data, Reader, Xlsx};
+    let s = Server::new().await?;
+    let source_id = s.file("sample.parquet")?;
+    let result = s
+        .call(
+            "query",
+            json!({"sql":"SELECT n FROM sample ORDER BY n DESC"}),
+        )
+        .await?;
+    let id = &result["resultId"];
+    let snap = s
+        .call("save_snapshot", json!({"resultId":id,"name":"Example"}))
+        .await?;
+    for (input, name) in [
+        (
+            json!({"snapshotId":snap["id"],"fileName":"摘要.XLSX"}),
+            "摘要.XLSX".to_owned(),
+        ),
+        (
+            json!({"resultId":id}),
+            format!("{}.xlsx", id.as_str().unwrap()),
+        ),
+    ] {
+        let exported = s.call("export_excel", input.clone()).await?;
+        let expected = s.core.engine.directory.join(&name);
+        assert_eq!(exported["path"], json!(expected));
+        assert_eq!(exported["total"], 125);
+        let mut book: Xlsx<_> = open_workbook(&expected)?;
+        let sheet = book.worksheet_range_at(0).unwrap()?;
+        assert_eq!(sheet.get_size(), (126, 1));
+        assert_eq!(sheet[(1, 0)], Data::Float(124.));
+        assert_eq!(sheet[(125, 0)], Data::Float(0.));
+        drop(book);
+        assert!(s.call("export_excel", input).await.is_err());
+    }
+    for name in [
+        "../escape.xlsx",
+        r"..\escape.xlsx",
+        "/escape.xlsx",
+        r"C:\escape.xlsx",
+        r"\\host\share\escape.xlsx",
+        "report.xlsx:stream.xlsx",
+        "NUL.xlsx",
+        "plain.csv",
+    ] {
+        assert!(s
+            .call("export_excel", json!({"resultId":id, "fileName":name}))
+            .await
+            .is_err());
+    }
+    for bad in [
+        json!({}),
+        json!({"snapshotId":snap["id"],"resultId":id}),
+        json!({"snapshotId":source_id}),
+    ] {
+        assert!(s.call("export_excel", bad).await.is_err());
+    }
+    #[cfg(unix)]
+    {
+        let outside = s._dir.path().join("outside.xlsx");
+        std::os::unix::fs::symlink(&outside, s.core.engine.directory.join("link.xlsx"))?;
+        assert!(s
+            .call(
+                "export_excel",
+                json!({"resultId":id,"fileName":"link.xlsx"})
+            )
+            .await
+            .is_err());
+        assert!(!outside.exists());
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn disabling_mcp_disconnects_local_clients_and_removes_discovery() -> Result<()> {
+    use tokio::io::AsyncReadExt;
+    let s = Server::new().await?;
+    let root = s._dir.path().join("cache");
+    let (mut client, bridge) = tokio::io::duplex(4096);
+    let relay = tokio::spawn({
+        let root = root.clone();
+        async move { stdio::bridge(&root, tokio::io::split(bridge)).await }
+    });
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+    client.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}\n").await?;
+    let mut reader = tokio::io::BufReader::new(&mut client);
+    let mut response = String::new();
+    tokio::time::timeout(Duration::from_secs(5), reader.read_line(&mut response)).await??;
+    assert_eq!(
+        serde_json::from_str::<Value>(&response)?["result"]["serverInfo"]["name"],
+        "LedgerView"
+    );
+    s.control.shutdown().await?;
+    let mut trailing = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), reader.read_to_end(&mut trailing)).await??;
+    tokio::time::timeout(Duration::from_secs(5), relay).await???;
+    assert!(!root.join("session").exists());
+    assert!(
+        stdio::bridge(&root, (tokio::io::empty(), tokio::io::sink()))
+            .await
+            .is_err()
+    );
     Ok(())
 }

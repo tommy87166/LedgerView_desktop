@@ -1,108 +1,146 @@
-// Claude starts a separate process. Keep the desktop process as the sole owner
-// of DuckDB, result files, notebook edits, and preview events.
+// The bridge only forwards MCP frames. DuckDB and every tool handler live in
+// the desktop process and are shared with HTTP clients.
+use super::{Tools, Workspace};
 use anyhow::{ensure, Context, Result};
-use rmcp::{
-    model::{
-        CallToolRequestParams, CallToolResponse, ListToolsResult, PaginatedRequestParams,
-        ServerConfig,
-    },
-    service::RequestContext,
-    transport::{
-        stdio, streamable_http_client::StreamableHttpClientTransportConfig,
-        StreamableHttpClientTransport,
-    },
-    ErrorData, Peer, RoleClient, RoleServer, ServerHandler, ServiceError, ServiceExt,
+use mcpmesh_local_api::transport::{
+    authorize_local_peer, bind_local, connect_local, split_local, LocalListener,
 };
-use std::time::Duration;
+use rmcp::ServiceExt;
+use std::{
+    hash::{DefaultHasher, Hash, Hasher},
+    io::Write,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::task::JoinSet;
+use uuid::Uuid;
 
-pub(super) const TOKEN_ENV: &str = "LEDGERVIEW_MCP_TOKEN";
-pub(super) const PORT_ENV: &str = "LEDGERVIEW_MCP_PORT";
+const IDENTITY: &str = "session/stdio.id";
 
-struct DesktopTools {
-    peer: Peer<RoleClient>,
-    info: ServerConfig,
+fn address(root: &Path) -> Result<PathBuf> {
+    let mut hash = DefaultHasher::new();
+    dunce::canonicalize(root)?.hash(&mut hash);
+    let key = hash.finish();
+    #[cfg(windows)]
+    return Ok(format!(r"\\.\pipe\LedgerView-{key:016x}").into());
+    // A long home directory can exceed the kernel's Unix socket path limit.
+    #[cfg(unix)]
+    Ok(PathBuf::from("/tmp")
+        .join(format!(
+            "ledgerview-{}",
+            rustix::process::geteuid().as_raw()
+        ))
+        .join(format!("{key:016x}.sock")))
 }
 
-fn mcp_error(error: ServiceError) -> ErrorData {
-    match error {
-        ServiceError::McpError(e) => e,
-        e => ErrorData::internal_error(e.to_string(), None),
+pub(super) struct Listener {
+    inner: LocalListener,
+    identity: Uuid,
+    #[cfg(unix)]
+    path: PathBuf,
+}
+
+impl Listener {
+    // The caller holds the workspace cache's exclusive owner lock. It also
+    // owns the private session directory where we publish the server identity.
+    pub(super) fn bind(root: &Path) -> Result<Self> {
+        let path = address(root)?;
+        let inner = bind_local(&path)?;
+        let listener = Self {
+            inner,
+            identity: Uuid::new_v4(),
+            #[cfg(unix)]
+            path,
+        };
+        let dest = root.join(IDENTITY);
+        let mut file = tempfile::NamedTempFile::new_in(dest.parent().unwrap())?;
+        file.write_all(listener.identity.as_bytes())?;
+        file.persist(dest)?;
+        Ok(listener)
+    }
+
+    pub(super) async fn serve(mut self, workspace: Arc<Workspace>) {
+        let mut sessions = JoinSet::new();
+        loop {
+            tokio::select! {
+                biased;
+                _ = workspace.stop.cancelled() => break,
+                Some(_) = sessions.join_next(), if !sessions.is_empty() => (),
+                incoming = self.inner.accept() => match incoming {
+                    Ok(mut stream) if authorize_local_peer(&stream) => {
+                        let tools = Tools(workspace.clone());
+                        let stop = workspace.stop.child_token();
+                        let identity = self.identity;
+                        sessions.spawn(async move {
+                            // Authenticate the listener to the bridge before it sends any SQL.
+                            stream.write_all(identity.as_bytes()).await?;
+                            let service = tools.serve_with_ct(split_local(stream), stop).await?;
+                            service.waiting().await?;
+                            anyhow::Ok(())
+                        });
+                    }
+                    Ok(_) => (),
+                    Err(error) => {
+                        eprintln!("LedgerView MCP local connection: {error}");
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                }
+            }
+        }
+        sessions.shutdown().await;
     }
 }
 
-impl ServerHandler for DesktopTools {
-    fn get_info(&self) -> ServerConfig {
-        self.info.clone()
-    }
-
-    async fn list_tools(
-        &self,
-        params: Option<PaginatedRequestParams>,
-        _: RequestContext<RoleServer>,
-    ) -> Result<ListToolsResult, ErrorData> {
-        self.peer.list_tools(params).await.map_err(mcp_error)
-    }
-
-    async fn call_tool(
-        &self,
-        params: CallToolRequestParams,
-        _: RequestContext<RoleServer>,
-    ) -> Result<CallToolResponse, ErrorData> {
-        self.peer
-            .call_tool(params)
-            .await
-            .map(Into::into)
-            .map_err(mcp_error)
+#[cfg(unix)]
+impl Drop for Listener {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
     }
 }
 
 pub(crate) fn run() -> Result<()> {
-    let token = std::env::var(TOKEN_ENV).context(
-        "Set LEDGERVIEW_MCP_TOKEN using the Claude Desktop config copied from LedgerView",
-    )?;
-    ensure!(!token.is_empty(), "Missing LedgerView MCP token");
-    let port: u16 = std::env::var(PORT_ENV)
-        .unwrap_or_else(|_| super::settings::DEFAULT_PORT.to_string())
-        .parse()
-        .context("Invalid LEDGERVIEW_MCP_PORT")?;
-    ensure!(port > 0, "Invalid LEDGERVIEW_MCP_PORT");
-    tokio::runtime::Builder::new_current_thread()
+    let root = std::env::var_os("LEDGERVIEW_MCP_CACHE_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            dirs::cache_dir().map(|dir| dir.join(super::APP_IDENTIFIER).join(super::CACHE_NAME))
+        })
+        .context("Unable to locate the LedgerView cache")?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
-        .build()?
-        .block_on(async { serve(port, token, stdio()).await })
+        .build()?;
+    let result = runtime.block_on(async { bridge(&root, rmcp::transport::io::stdio()).await });
+    // A Tokio stdin read can still be blocked when the desktop closes first.
+    runtime.shutdown_background();
+    result
 }
 
-pub(super) async fn serve<R, W>(port: u16, token: String, io: (R, W)) -> Result<()>
-where
-    R: tokio::io::AsyncRead + Send + Unpin + 'static,
-    W: tokio::io::AsyncWrite + Send + Unpin + 'static,
-{
-    let url = format!("http://127.0.0.1:{port}/mcp");
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(Duration::from_secs(3))
-        .build()?;
-    let config = StreamableHttpClientTransportConfig::with_uri(url.clone()).auth_header(token);
-    let transport = StreamableHttpClientTransport::with_client(client, config);
-    let mut desktop = ().serve(transport).await.with_context(|| {
-        format!(
-            "Could not connect to {url}. Open LedgerView, enable MCP, and check the port and token"
-        )
-    })?;
-    let info = desktop
-        .peer_info()
-        .context("Desktop did not return server information")?;
-    let mut local_info = ServerConfig::new(info.capabilities.clone());
-    if let Some(identity) = &info.server_info {
-        local_info.server_info = identity.clone();
-    }
-    local_info.instructions = info.instructions.clone();
-    let proxy = DesktopTools {
-        peer: desktop.peer().clone(),
-        info: local_info,
+pub(super) async fn bridge(
+    root: &Path,
+    (mut input, mut output): (impl AsyncRead + Unpin, impl AsyncWrite + Unpin),
+) -> Result<()> {
+    let connect = async {
+        let expected = Uuid::from_slice(&std::fs::read(root.join(IDENTITY))?)?;
+        let mut stream = connect_local(&address(root)?).await?;
+        #[cfg(unix)]
+        ensure!(authorize_local_peer(&stream), "Unexpected desktop user");
+        let mut id = [0; 16];
+        stream.read_exact(&mut id).await?;
+        ensure!(expected.as_bytes() == &id, "Unexpected desktop instance");
+        anyhow::Ok(stream)
     };
-    proxy.serve(io).await?.waiting().await?;
-    desktop.close().await?;
+    let stream = tokio::time::timeout(Duration::from_secs(3), connect)
+        .await
+        .context("Timed out connecting to LedgerView")?
+        .context("Open LedgerView and enable MCP before connecting with stdio")?;
+    let (mut reader, mut writer) = split_local(stream);
+    // EOF on either side ends this stdio session, including on Windows pipes
+    // where a write-half shutdown alone cannot notify the other process.
+    tokio::select! {
+        result = tokio::io::copy(&mut input, &mut writer) => { result?; }
+        result = tokio::io::copy(&mut reader, &mut output) => { result?; }
+    }
+    output.flush().await?;
     Ok(())
 }

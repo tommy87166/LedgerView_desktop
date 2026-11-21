@@ -90,7 +90,7 @@ export function McpSettings() {
         </button>
       </div>
       <form className="mcp-setting" onSubmit={(e) => { e.preventDefault(); void perform(savePort); }}>
-        <label htmlFor="mcp-port">PORT</label>
+        <label htmlFor="mcp-port">HTTP Port</label>
         <div className="mcp-actions">
           <input id="mcp-port" type="text" inputMode="numeric" autoComplete="off"
             value={port} placeholder={String(defaultPort)} aria-invalid={!validPort}

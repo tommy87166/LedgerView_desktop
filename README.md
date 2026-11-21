@@ -48,9 +48,9 @@ Open **Settings → MCP** and enable the local service. Keep LedgerView running 
 2. In Claude Desktop, open **Settings → Developer → Edit Config**. Merge the copied `LedgerView` entry into `mcpServers`, or paste the complete JSON if the file is empty.
 3. Quit and reopen Claude Desktop. Ask Claude to list the tables in your LedgerView workspace.
 
-Claude launches the same executable with `--mcp-stdio`. It forwards tool calls to the open workspace, so previews and snapshots appear in your desktop window. Copy the configuration again after moving the executable, changing the port, or rotating the token. The copied configuration contains the bearer token. [MCP local server setup](https://modelcontextprotocol.io/docs/develop/connect-local-servers)
+Claude launches the same executable with `--mcp-stdio`. It connects to the open desktop workspace through a Unix socket on macOS or a local named pipe on Windows. Access is limited to processes running as your OS user while MCP is enabled. The Claude configuration contains only the executable path and arguments. If upgrading from the HTTP-backed bridge, replace the old entry to remove its saved token. Copy the configuration again if you move the executable. [MCP local server setup](https://modelcontextprotocol.io/docs/develop/connect-local-servers)
 
-**Streamable HTTP.** Choose **Copy connection config** to get the loopback URL and authorization header. The default URL is `http://127.0.0.1:18476/mcp`. Change the port while MCP is off. Disk workspaces persist the port and token, and rotating the token revokes the previous one.
+**Streamable HTTP.** Choose **Copy HTTP settings** to get the loopback URL and authorization header. The default URL is `http://127.0.0.1:18476/mcp`. Change the port while MCP is off. Disk workspaces persist the port and token, and rotating the token revokes the previous one.
 
 | Tool | Use |
 | --- | --- |
@@ -58,6 +58,7 @@ Claude launches the same executable with `--mcp-stdio`. It forwards tool calls t
 | `query` | Run read-only DuckDB SQL. Return a page to the client, or use `preview: true` to open the result on the desktop. |
 | `result_page` | Read subsequent pages using the returned cursor. |
 | `save_snapshot` | Save the complete result, optionally open it, or replace a snapshot previously created from an AI result. |
+| `export_excel` | Write an entire snapshot or query result to an Excel workbook. Supply `snapshotId` or `resultId` and optionally a `fileName` such as `summary.xlsx`. Files are saved directly in the workspace directory and existing files are preserved. |
 | `list_notebooks` | Read notebook names, cells, SQL, and revisions. |
 | `edit_notebook` | Create or edit notebooks. Revision checks detect concurrent edits. |
 

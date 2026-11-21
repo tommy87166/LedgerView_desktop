@@ -7,7 +7,7 @@ import { confirm, save } from '@tauri-apps/plugin-dialog';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { request } from '../../lib/native';
 import { sanitizeFileName } from '../../lib/util/ids';
-import { IconSnapshot } from '../common/icons';
+import { IconCopy, IconDownload, IconRename, IconSnapshot, IconSpreadsheet } from '../common/icons';
 import { useMessages } from '../../i18n';
 
 interface Props {
@@ -130,17 +130,21 @@ export function SnapshotList({ activeId, onOpenPreview }: Props) {
             </button>
           </div>
           <div className="snapshot-actions">
-            <button onClick={() => void onCopy(snap)} disabled={busy}>
-              {t.snapshot.copy}
+            <button className="quiet-button" aria-label={t.snapshot.copy} title={t.snapshot.copy}
+              onClick={() => void onCopy(snap)} disabled={busy}>
+              <IconCopy />
             </button>
-            <button onClick={() => startEdit(snap)} disabled={busy}>
-              {t.snapshot.rename}
+            <button className="quiet-button" aria-label={t.snapshot.rename} title={t.snapshot.rename}
+              onClick={() => startEdit(snap)} disabled={busy}>
+              <IconRename />
             </button>
-            <button onClick={() => void onDownload(snap, 'parquet')} disabled={busy}>
-              {t.snapshot.downloadParquet}
+            <button className="quiet-button" aria-label={t.snapshot.downloadParquet} title={t.snapshot.downloadParquet}
+              onClick={() => void onDownload(snap, 'parquet')} disabled={busy}>
+              <IconDownload />
             </button>
-            <button onClick={() => void onDownload(snap, 'xlsx')} disabled={busy}>
-              {t.snapshot.downloadExcel}
+            <button className="quiet-button" aria-label={t.snapshot.downloadExcel} title={t.snapshot.downloadExcel}
+              onClick={() => void onDownload(snap, 'xlsx')} disabled={busy}>
+              <IconSpreadsheet />
             </button>
           </div>
         </div>

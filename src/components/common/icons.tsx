@@ -49,6 +49,40 @@ export function IconNotebook({ size = 16, ...props }: IconProps) {
   return <svg {...base(size, props)} aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 3v18M3 8h4M3 15h4" /></svg>;
 }
 
+export function IconCopy({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)} aria-hidden="true">
+      <rect x="8" y="8" width="12" height="13" rx="2" />
+      <path d="M15 5V4a1 1 0 0 0-1-1H5a2 2 0 0 0-2 2v10a1 1 0 0 0 1 1h1" />
+    </svg>
+  );
+}
+
+export function IconRename({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)} aria-hidden="true">
+      <path d="m4 15-1 6 6-1L20 9a2.8 2.8 0 0 0-5-5L4 15Zm9-9 5 5" />
+    </svg>
+  );
+}
+
+export function IconDownload({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)} aria-hidden="true">
+      <path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4" />
+    </svg>
+  );
+}
+
+export function IconSpreadsheet({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)} aria-hidden="true">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm0 0v6h6" />
+      <path d="M8 11h8v7H8zM8 14.5h8m-4-3.5v7" />
+    </svg>
+  );
+}
+
 export function IconDatabase({ size = 16, ...props }: IconProps) {
   return (
     <svg {...base(size, props)} aria-hidden="true">

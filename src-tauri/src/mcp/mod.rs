@@ -1,4 +1,5 @@
 mod cache;
+mod export;
 mod query;
 pub(crate) mod settings;
 pub(crate) mod stdio;
@@ -14,6 +15,7 @@ use axum::{
     Router,
 };
 use duckdb::Connection;
+use export::ExportArgs;
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
@@ -254,6 +256,14 @@ impl Tools {
     }
 
     #[tool(
+        description = "Export one saved snapshot (snapshotId) or complete query result (resultId) to an Excel .xlsx file in the LedgerView workspace directory. fileName is optional and must be a filename only. Existing files are preserved."
+    )]
+    async fn export_excel(&self, Parameters(args): Parameters<ExportArgs>) -> CallToolResult {
+        let core = self.0.clone();
+        reply(blocking(move || core.export_excel(args)).await)
+    }
+
+    #[tool(
         description = "Read all notebooks, cell slots, names, SQL, and revision tokens for editing."
     )]
     async fn list_notebooks(&self) -> CallToolResult {
@@ -350,12 +360,16 @@ struct Running {
     token: Arc<Mutex<String>>,
     core: Arc<Workspace>,
     server: tokio::task::JoinHandle<std::io::Result<()>>,
+    local_server: tokio::task::JoinHandle<()>,
 }
 #[derive(Default)]
 pub(crate) struct Control(tokio::sync::Mutex<Option<Running>>);
 
+const APP_IDENTIFIER: &str = "com.tommypai.ledgerview.desktop";
+const CACHE_NAME: &str = "mcp-temp-v1";
+
 pub(crate) fn cache_root(app: &AppHandle) -> Result<std::path::PathBuf> {
-    Ok(app.path().app_cache_dir()?.join("mcp-temp-v1"))
+    Ok(app.path().app_cache_dir()?.join(CACHE_NAME))
 }
 
 async fn stop(running: &mut Option<Running>) -> Result<()> {
@@ -363,6 +377,7 @@ async fn stop(running: &mut Option<Running>) -> Result<()> {
         previous.core.stop.cancel();
         previous.server.abort();
         let _ = previous.server.await;
+        previous.local_server.await?;
         tokio::task::spawn_blocking(move || previous.core.cache.close()).await??;
     }
     Ok(())

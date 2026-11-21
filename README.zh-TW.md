@@ -74,7 +74,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 ## 🤖 從 AI 操作 LedgerView
 
-在左下角的 **設定 → MCP** 開啟服務，按 **複製連線設定** 即可取得用戶端需要的 URL 和 Bearer 授權標頭。預設連線網址為 `http://127.0.0.1:18476/mcp`。關閉 MCP 時可修改連接埠並按「儲存」，留白可恢復預設值。
+在左下角的 **設定 → MCP** 開啟服務，按 **複製 HTTP 設定** 即可取得用戶端需要的 URL 和 Bearer 授權標頭。預設連線網址為 `http://127.0.0.1:18476/mcp`。關閉 MCP 時可修改連接埠並按「儲存」，留白可恢復預設值。
 
 ### Claude Desktop 的本機 stdio
 
@@ -82,7 +82,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 2. 按「複製 Claude Desktop 設定（stdio）」。在 Claude Desktop 的 **Settings → Developer → Edit Config** 中，將複製的 `LedgerView` 項目合併到 `mcpServers`。第一次建立設定檔時可貼上整份 JSON。
 3. 完全退出並重新開啟 Claude Desktop。保持 LedgerView 開啟，請 Claude 列出工作區的資料表即可驗證連線。
 
-Claude 會以 `--mcp-stdio` 啟動同一個 LedgerView 執行檔，再連回桌面上的工作區。若移動執行檔、更換連接埠或重新產生權杖，請重新複製設定並重啟 Claude Desktop。複製的設定含有工作區權杖。[MCP 本機連線指南](https://modelcontextprotocol.io/docs/develop/connect-local-servers)
+Claude 會以 `--mcp-stdio` 啟動同一個 LedgerView 執行檔，透過 macOS 的 Unix socket 或 Windows 的本機 named pipe 連回桌面工作區。啟用 MCP 期間，同一個作業系統帳號執行的程序可以連線。Claude 設定只需執行檔路徑和參數。從舊版升級時，請重新複製設定以移除原有權杖；若移動執行檔也需要更新路徑並重啟 Claude Desktop。[MCP 本機連線指南](https://modelcontextprotocol.io/docs/develop/connect-local-servers)
 
 ### 工作區權限與工具
 
@@ -96,6 +96,7 @@ Claude 會以 `--mcp-stdio` 啟動同一個 LedgerView 執行檔，再連回桌�
 | `query` | 執行一段唯讀 DuckDB SQL。預設將第一頁回傳給 AI。設 `preview: true` 會開啟全螢幕「預覽」，AI 收到結果 ID 和列數。使用者可在左下角按「快照」保存完整結果，之後 AI 可用 `save_snapshot` 的 `replaceId` 覆寫同一份快照。 |
 | `result_page` | 使用前一頁的 `next` 取得後續資料。每頁最多 100 列，資料列內容最多 512 KiB。 |
 | `save_snapshot` | 使用結果 ID 保存完整結果。傳 `focus: true` 可切換到該快照。之後指定同一個 `replaceId`，可整份更新 AI 建立的快照。 |
+| `export_excel` | 將整份快照或查詢結果匯出成 Excel。指定 `snapshotId` 或 `resultId`，可附上 `fileName`（例如 `摘要.xlsx`）。檔案只會存到設定中「開啟工作目錄」的資料夾，同名檔案會保留。 |
 | `list_notebooks` | 讀取筆記本、區塊名稱、SQL 與編輯版本。 |
 | `edit_notebook` | 建立筆記本，或依 `expectedRevision` 編輯現有筆記本的名稱、區塊與 SQL。既有區塊保留 slot，新區塊省略 slot。若使用者已修改，工具會回報衝突。 |
 
