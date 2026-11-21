@@ -111,9 +111,8 @@ fn install(update: &Update, bytes: &[u8]) -> Result<()> {
     // self-replace moves the running image before copying the new one. Keep
     // a recoverable copy on the same volume in case that final copy fails.
     let backup = dir.path().join("previous.exe");
-    if std::fs::hard_link(&target, &backup).is_err() {
-        std::fs::copy(&target, &backup)?;
-    }
+    // An independent file can be removed while the old image is still running.
+    std::fs::copy(&target, &backup)?;
     if let Err(err) = self_replace::self_replace(&replacement) {
         if !target.try_exists().unwrap_or(false) && std::fs::rename(&backup, &target).is_err() {
             let path = dir.keep();

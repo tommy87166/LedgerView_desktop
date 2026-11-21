@@ -13,15 +13,12 @@ async fn download_fixture(dir: &Path, exe: &Path) -> Result<(Update, Vec<u8>)> {
     let manifest = json!({"version":version,"platforms":{"fixture":{
         "url":format!("{base}/package"), "signature":fs::read_to_string(dir.join("package.sig"))?.trim()}}});
     let path = dir.join("package");
-    let server_manifest = manifest.clone();
+    let server_manifest = manifest.to_string();
     let server = tokio::spawn(async move {
         axum::serve(
             listener,
             Router::new()
-                .route(
-                    "/latest.json",
-                    get(move || async { server_manifest.to_string() }),
-                )
+                .route("/latest.json", get(move || async move { server_manifest }))
                 .route("/package", get(move || async { fs::read(path).unwrap() })),
         )
         .await
