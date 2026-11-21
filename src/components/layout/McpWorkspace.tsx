@@ -12,6 +12,8 @@ import type { ColumnMeta, DatasetMeta } from '../../types/dataset';
 import type { StoredNotebook } from '../../types/notebook';
 import type { SnapshotMeta } from '../../types/snapshot';
 
+import { updating, useUpdates } from '../../store/updates';
+
 type McpEvent =
   | { type: 'begin'; token: string; sql: string }
   | { type: 'finish'; token: string; sql: string; elapsedMs: number; error?: string }
@@ -81,6 +83,7 @@ export function McpWorkspace() {
           let result, error;
           try {
             await invoke('mcp_claim_edit', { ticket: e.ticket });
+            if (updating(useUpdates.getState().phase)) throw Error('LedgerView is updating. Retry after restart.');
             result = await applyAiNotebook(e.before, e.name, e.cells);
           } catch (cause) {
             error = String(cause);

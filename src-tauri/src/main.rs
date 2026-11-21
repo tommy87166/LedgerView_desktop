@@ -6,6 +6,7 @@ mod filter;
 mod ledger;
 mod mcp;
 mod notebooks;
+mod updates;
 
 use anyhow::{Context, Result};
 use bindings::{BindingTrace, LoggedStatement};
@@ -409,7 +410,16 @@ impl Engine {
     }
 }
 
-struct Database(Result<Arc<Engine>, String>);
+struct Database(Mutex<Result<Arc<Engine>, String>>);
+impl Database {
+    fn engine(&self) -> Result<Arc<Engine>, String> {
+        self.0.lock().unwrap().clone()
+    }
+
+    fn close(&self) {
+        *self.0.lock().unwrap() = Err("Workspace closed".into());
+    }
+}
 
 #[tauri::command]
 async fn ledger_request(
@@ -420,7 +430,7 @@ async fn ledger_request(
     webview: Webview,
     on_statement: Option<JavaScriptChannelId>,
 ) -> Result<Value, String> {
-    let engine = database.0.clone()?;
+    let engine = database.engine()?;
     engine.register(&token).map_err(|e| e.to_string())?;
     let on_statement = on_statement.map(|id| id.channel_on::<_, LoggedStatement>(webview));
     tauri::async_runtime::spawn_blocking(move || {
@@ -441,7 +451,7 @@ async fn ledger_request(
 
 #[tauri::command]
 fn cancel_query(database: State<'_, Database>, token: String) {
-    let Ok(engine) = &database.0 else {
+    let Ok(engine) = database.engine() else {
         return;
     };
     engine.cancel(&token);
@@ -476,6 +486,8 @@ fn main() {
     }
     tauri::Builder::default()
         .manage(mcp::Control::default())
+        .manage(updates::Updates::default())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
@@ -491,10 +503,13 @@ fn main() {
                 .and_then(Engine::new)
                 .map(Arc::new)
                 .map_err(|e| format!("{e:#}"));
-            app.manage(Database(engine));
+            app.manage(Database(Mutex::new(engine)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            updates::check_update,
+            updates::download_update,
+            updates::install_update,
             ledger_request,
             cancel_query,
             open_workspace_directory,
@@ -516,6 +531,7 @@ fn main() {
                 if let Err(error) = tauri::async_runtime::block_on(state.shutdown()) {
                     eprintln!("Cleaning MCP cache on exit: {error:#}");
                 }
+                app.state::<Database>().close();
             }
         });
 }

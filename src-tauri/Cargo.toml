@@ -1,6 +1,6 @@
 [package]
 name = "ledgerview-desktop"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 
 [build-dependencies]
@@ -32,14 +32,19 @@ open = "5"
 rust_xlsxwriter = { version = "0.103.0", features = ["constant_memory"] }
 mcpmesh-local-api = { version = "0.58", features = ["service"] }
 dirs = "7"
+tauri-plugin-updater = { version = "2.14.1", default-features = false, features = ["native-tls", "system-proxy", "zip"] }
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["process", "fs"] }
+
+[target."cfg(windows)".dependencies]
+self-replace = "1"
 
 [profile.dev]
 debug = 0
 
 [dev-dependencies]
+tauri = { version = "2", features = ["test"] }
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 calamine = "0.38.0"
 tokio = { version = "1", features = ["process", "test-util"] }

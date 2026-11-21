@@ -78,6 +78,7 @@ function change(activity: Activity | null) {
 
 // Serialize GUI operations so the progress indicator always cancels the operation it displays.
 let queue: Promise<unknown> = Promise.resolve();
+export const waitForRequests = () => queue;
 export function request<K extends keyof Commands>(
   type: K,
   args: Commands[K][0],

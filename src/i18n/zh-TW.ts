@@ -87,9 +87,23 @@ export const MESSAGES_ZH_TW = {
     columnsTooltip: '顯示／隱藏欄位（僅此資料表）',
   },
 
+  updates: {
+    title: '程式更新',
+    check: '檢查更新',
+    checking: '檢查中…',
+    current: '已是最新版。',
+    downloading: '正在下載並驗證更新檔…',
+    saving: '正在儲存筆記本並等候工作完成…',
+    installing: '正在安裝，稍後將重新啟動…',
+    checkFailed: '無法檢查更新。',
+    installFailed: '更新未完成。',
+    memoryWarning: '目前是記憶體模式。重新啟動會清除這次工作階段的資料。若要保留，請先取消並匯出筆記本或快照。現在更新並重新啟動嗎？',
+    install: (v: string) => `更新至 ${v} 並重新啟動`,
+    notice: (v: string) => `已有新版 ${v} 可在設定中更新。`,
+  },
   changelog: {
     title: '更新紀錄',
-    release: '檢視本機 Parquet、以 SQL 筆記本查詢資料，並將快照匯出為 Excel 或 Parquet。支援 MCP 連線至桌面工作區。',
+    release: '新增 GitHub 版本檢查與簽章更新，可從設定安裝新版並重新啟動。',
   },
 
   mcp: {

@@ -111,3 +111,11 @@ MCP 查詢使用獨立的 DuckDB 實例，直接讀取已開啟的原始 Parquet
 ## 後續效能與 MCP 驗證
 
 用目標平台的安裝產物開啟代表性大檔，量測首屏時間、常用篩選與全檔排序的延遲、尖峰記憶體和暫存磁碟用量。用實際 MCP client 查同一份資料，驗證 agent 彙總時仍可操作畫面，以及取消請求能中止 DuckDB 查詢。可用 LedgerView 現有的約 30 GB 合成 Parquet 產生器做壓力測試。[LedgerView 大檔測試資料](https://github.com/tommy87166/LedgerView/blob/main/scripts/generate-fixtures.mjs#L116)
+
+### 程式更新
+
+從 1.1.0 起，LedgerView 會在工作區開啟後向本專案的 GitHub Release 檢查新版。可在「設定 → 程式更新」手動檢查，或按「更新至新版並重新啟動」。程式會先下載並驗證更新檔的簽章與版本，再儲存筆記本、安裝及重開。磁碟工作區沿用原有資料庫；記憶體工作區若需保留資料，請先匯出。
+
+Windows 會在原路徑替換可攜式 EXE。macOS 會替換已解壓縮的 LedgerView.app。更新來源需可匿名讀取，現有 1.0.0 使用者需先手動升級一次。
+
+發布維護者推送與程式版本一致的數字標籤（例如 `1.1.0`）時，GitHub Actions 會測試兩個平台，簽署更新檔，並將下載檔、簽章和 `latest.json` 一併發布。正式簽署私鑰存放在 Actions Secret `LEDGERVIEW_UPDATE_SIGNING_KEY`；對應公鑰內建於程式。開發分支與 PR 使用一次性測試金鑰驗證更新流程。

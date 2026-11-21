@@ -12,6 +12,9 @@ import { getMessages, useMessages } from './i18n';
 
 import { McpWorkspace } from './components/layout/McpWorkspace';
 
+import { checkUpdate } from './store/updates';
+import { UpdateProgress } from './components/layout/UpdateSettings';
+
 export function App() {
   const t = useMessages();
   const dbReady = useUi((s) => s.dbReady);
@@ -32,6 +35,7 @@ export function App() {
         setSnapshots(catalog.snapshots);
         setDbReady(persistent);
         restoreNotebooks(notebooks, persistent);
+        void checkUpdate(true);
         for (const path of catalog.failed) toast('error', getMessages().app.reopenFailed(path));
       } catch (err) {
         if (cancelled) return;
@@ -59,6 +63,7 @@ export function App() {
         </div>
         {dbReady && !dbError && <><DiagnosticLog /><McpWorkspace /></>}
       </div>
+      <UpdateProgress />
       <Toasts />
     </>
   );

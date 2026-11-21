@@ -11,6 +11,9 @@ import { useDiagnostics } from '../../store/diagnostics';
 
 import { McpSettings } from './McpSettings';
 
+import { UpdateSettings } from './UpdateSettings';
+import { version } from '../../../package.json';
+
 export function WorkspaceSettings() {
   const t = useMessages();
   const lang = useLang();
@@ -91,10 +94,11 @@ export function WorkspaceSettings() {
           <input type="checkbox" checked={diagnostics} onChange={(e) => useDiagnostics.getState().setEnabled(e.target.checked)} />
         </label>
         {open && <McpSettings />}
+        <UpdateSettings />
         <details>
           <summary>{t.changelog.title}</summary>
           <div className="changelog-entry">
-            <strong>v1.0.0</strong>
+            <strong>v{version}</strong>
             <p>{t.changelog.release}</p>
           </div>
         </details>

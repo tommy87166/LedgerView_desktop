@@ -211,7 +211,7 @@ pub(crate) async fn mcp_info(
     state: State<'_, Control>,
 ) -> Result<Info, String> {
     state
-        .info(&database.0.clone()?)
+        .info(&database.engine()?)
         .await
         .map_err(|e| format!("{e:#}"))
 }
@@ -223,7 +223,7 @@ pub(crate) async fn mcp_set_port(
     state: State<'_, Control>,
 ) -> Result<(), String> {
     state
-        .set_port(&database.0.clone()?, port)
+        .set_port(&database.engine()?, port)
         .await
         .map_err(|e| format!("{e:#}"))
 }
@@ -250,7 +250,7 @@ pub(crate) async fn mcp_set_enabled(
         Ok(())
     });
     state
-        .set_enabled(&database.0.clone()?, enabled, &root, emit)
+        .set_enabled(&database.engine()?, enabled, &root, emit)
         .await
         .map_err(|e| format!("{e:#}"))
 }
@@ -261,7 +261,7 @@ pub(crate) async fn mcp_regenerate_token(
     state: State<'_, Control>,
 ) -> Result<String, String> {
     state
-        .rotate(&database.0.clone()?)
+        .rotate(&database.engine()?)
         .await
         .map_err(|e| format!("{e:#}"))
 }

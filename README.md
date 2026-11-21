@@ -93,3 +93,9 @@ Frontend tests cover table filters, paging, notebooks, and the desktop bridge. R
 | `src-tauri/src/mcp/` | MCP tools, HTTP service, stdio bridge, authentication, and temporary results. |
 
 MIT licensed. [License](LICENSE)
+
+### App updates
+
+Starting with 1.1.0, LedgerView checks this repository’s latest GitHub Release after opening the workspace. Open **Settings → App updates** to check again or install a new version. The app verifies the download and its signed version, saves pending notebook edits, replaces the portable Windows executable or macOS app in place, and restarts. Disk workspaces keep their catalog. Export anything you want to keep from a memory workspace before restarting.
+
+The feed requires anonymous read access. Users of 1.0.0 need to upgrade manually once. To publish an update, push a numeric tag matching the app version. After both platform jobs pass, CI signs the packages with the `LEDGERVIEW_UPDATE_SIGNING_KEY` Actions secret, verifies them against the embedded public key, and publishes them with `latest.json`. Branch and PR builds exercise updates with temporary test keys.

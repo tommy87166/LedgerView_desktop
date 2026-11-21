@@ -88,10 +88,24 @@ export const MESSAGES_EN: Messages = {
     columnsTooltip: 'Show / hide columns (this table only)',
   },
 
+  updates: {
+    title: 'App updates',
+    check: 'Check for updates',
+    checking: 'Checking…',
+    current: 'You’re up to date.',
+    downloading: 'Downloading and verifying the update…',
+    saving: 'Saving notebooks and waiting for work to finish…',
+    installing: 'Installing and restarting…',
+    checkFailed: 'Could not check for updates.',
+    installFailed: 'Update incomplete.',
+    memoryWarning: 'This workspace is in memory. Restarting discards this session. To keep notebooks or snapshots, cancel and export them first. Update and restart now?',
+    install: (v: string) => `Update to ${v} and restart`,
+    notice: (v: string) => `Version ${v} is available in Settings.`,
+  },
   changelog: {
     title: 'Changelog',
     release:
-      'Browse local Parquet files, query data in SQL notebooks, and export snapshots to Excel or Parquet. Connect MCP clients to the desktop workspace.',
+      'Check GitHub for new versions and install signed updates from Settings.',
   },
 
   mcp: {

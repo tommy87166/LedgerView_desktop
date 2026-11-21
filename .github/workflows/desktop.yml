@@ -3,6 +3,7 @@ name: Desktop tests and builds
 on:
   push:
     branches: [main]
+    tags: ['[0-9]*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -52,8 +53,11 @@ jobs:
         run: npm test
       - name: Type-check and build the desktop app
         run: npm run tauri -- build --ci --target ${{ matrix.target }} ${{ matrix.bundle }} -- --locked
+      - name: Prepare isolated updater test using the packaged app
+        run: python .github/scripts/test_update_package.py "src-tauri/target/${{ matrix.target }}/release/${{ runner.os == 'Windows' && 'LedgerView.exe' || 'bundle/macos/LedgerView.app' }}" "${{ runner.temp }}/lv-update-test"
       - name: Run Rust integration tests with bundled DuckDB
         env:
+          LEDGERVIEW_TEST_UPDATE_DIR: ${{ runner.temp }}/lv-update-test
           LEDGERVIEW_TEST_STDIO_BIN: ${{ github.workspace }}/src-tauri/target/${{ matrix.target }}/release/${{ runner.os == 'Windows' && 'LedgerView.exe' || 'bundle/macos/LedgerView.app/Contents/MacOS/LedgerView' }}
         run: cargo test --manifest-path src-tauri/Cargo.toml --release --locked --target ${{ matrix.target }} --features tauri/custom-protocol
       - name: Verify the portable Windows executable
@@ -82,3 +86,48 @@ jobs:
           path: ${{ matrix.artifact }}
           archive: false
           if-no-files-found: error
+
+      - name: Package the tested macOS bundle for in-app updates
+        if: runner.os == 'macOS' && github.ref_type == 'tag'
+        run: |
+          bundle="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          COPYFILE_DISABLE=1 tar -czf LedgerView.app.tar.gz -C "$bundle" LedgerView.app
+      - name: Upload macOS update package
+        if: runner.os == 'macOS' && github.ref_type == 'tag'
+        uses: actions/upload-artifact@v7
+        with:
+          path: LedgerView.app.tar.gz
+          archive: false
+          if-no-files-found: error
+
+  release:
+    name: Sign updates and publish the tested release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: desktop
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: sudo apt-get update -qq && sudo apt-get install -y minisign
+      - name: Verify tag and fetch artifacts from this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/release_updates.py fetch
+      - name: Sign and verify update packages
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.LEDGERVIEW_UPDATE_SIGNING_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: python3 .github/scripts/release_updates.py sign
+      - name: Publish assets and update feed together
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag \
+            --title "LedgerView $GITHUB_REF_NAME" --generate-notes
