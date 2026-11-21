@@ -91,10 +91,11 @@ export const MESSAGES_EN: Messages = {
   changelog: {
     title: 'Changelog',
     release:
-      'Browse local Parquet files, filter across ledgers, save snapshots and export Parquet.',
+      'Browse local Parquet files, query data in SQL notebooks, and export snapshots to Excel or Parquet. Connect MCP clients to the desktop workspace.',
   },
 
   mcp: {
+    copyTemplate: 'Copy HTTP template',
     copyClaude: 'Copy Claude Desktop config (stdio)',
     enable: 'Enable local MCP', on: 'On', off: 'Off', save: 'Save',
     invalidPort: 'Enter a whole number from 1 to 65535, or leave blank for 18476.',
@@ -156,6 +157,7 @@ export const MESSAGES_EN: Messages = {
     stale: 'SQL changed. Run again to update.',
   },
   sidebar: {
+    storageMode: 'Storage mode',
     title: 'Sources',
     databases: 'Databases',
     snapshots: 'Snapshots',

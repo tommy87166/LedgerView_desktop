@@ -130,19 +130,19 @@ export function SnapshotList({ activeId, onOpenPreview }: Props) {
             </button>
           </div>
           <div className="snapshot-actions">
-            <button className="quiet-button" aria-label={t.snapshot.copy} title={t.snapshot.copy}
+            <button className="quiet-button" aria-label={t.snapshot.copy}
               onClick={() => void onCopy(snap)} disabled={busy}>
               <IconCopy />
             </button>
-            <button className="quiet-button" aria-label={t.snapshot.rename} title={t.snapshot.rename}
+            <button className="quiet-button" aria-label={t.snapshot.rename}
               onClick={() => startEdit(snap)} disabled={busy}>
               <IconRename />
             </button>
-            <button className="quiet-button" aria-label={t.snapshot.downloadParquet} title={t.snapshot.downloadParquet}
+            <button className="quiet-button" aria-label={t.snapshot.downloadParquet}
               onClick={() => void onDownload(snap, 'parquet')} disabled={busy}>
               <IconDownload />
             </button>
-            <button className="quiet-button" aria-label={t.snapshot.downloadExcel} title={t.snapshot.downloadExcel}
+            <button className="quiet-button" aria-label={t.snapshot.downloadExcel}
               onClick={() => void onDownload(snap, 'xlsx')} disabled={busy}>
               <IconSpreadsheet />
             </button>

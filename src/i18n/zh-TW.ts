@@ -89,10 +89,11 @@ export const MESSAGES_ZH_TW = {
 
   changelog: {
     title: '更新紀錄',
-    release: '桌面版支援本機 Parquet 查詢、跨檔篩選、快照和 Parquet 匯出。',
+    release: '檢視本機 Parquet、以 SQL 筆記本查詢資料，並將快照匯出為 Excel 或 Parquet。支援 MCP 連線至桌面工作區。',
   },
 
   mcp: {
+    copyTemplate: '複製 HTTP 範本',
     copyClaude: '複製 Claude Desktop 設定（stdio）',
     enable: '啟用本機 MCP', on: '開啟', off: '關閉', save: '儲存',
     invalidPort: '請輸入 1 至 65535 的整數，留白使用 18476。',
@@ -154,6 +155,7 @@ export const MESSAGES_ZH_TW = {
     stale: 'SQL 已修改，請重新執行',
   },
   sidebar: {
+    storageMode: '儲存模式',
     title: '來源',
     databases: '資料庫',
     snapshots: '快照',

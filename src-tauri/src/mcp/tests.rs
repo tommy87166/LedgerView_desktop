@@ -28,11 +28,12 @@ impl Server {
             files: Default::default(),
             query_slot: Arc::new(Semaphore::new(1)),
             edits: Default::default(),
+            exports: Default::default(),
             stop: CancellationToken::new(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let host = listener.local_addr()?.to_string();
-        let token = Arc::new(Mutex::new("test-token".to_owned()));
+        let token = Arc::new(Mutex::new(settings::token_hash(b"test-token")));
         let router = router(core.clone(), host.clone(), token.clone());
         let stop = core.stop.clone();
         let server = tokio::spawn(async move {
@@ -45,7 +46,7 @@ impl Server {
         let local_server = tokio::spawn(local.serve(core.clone()));
         let running = Running {
             url: url.clone(),
-            token,
+            token_hash: token,
             core: core.clone(),
             server,
             local_server,
@@ -439,6 +440,9 @@ async fn exercise_stdio(
         let frame =
             json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}).to_string() + "\n";
         output.write_all(frame.as_bytes()).await?;
+        if id == 3 {
+            output.shutdown().await?;
+        }
         let line = tokio::time::timeout(Duration::from_secs(10), lines.next_line())
             .await??
             .context("No stdio response")?;
@@ -464,7 +468,6 @@ async fn exercise_stdio(
             ),
         }
     }
-    output.shutdown().await?;
     Ok(())
 }
 
@@ -572,5 +575,195 @@ async fn disabling_mcp_disconnects_local_clients_and_removes_discovery() -> Resu
             .await
             .is_err()
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn result_quota_cleans_partial_files_and_evicts_the_oldest_unleased_result() -> Result<()> {
+    let s = Server::new().await?;
+    let ct = CancellationToken::new();
+    let sql = "SELECT 1 AS n";
+    let run = |single, total| query::run(&s.core, sql, &ct, query::Limits { single, total });
+    let error = run(1, 100).err().unwrap();
+    assert!(error.to_string().contains("byte limit"), "{error}");
+    assert_eq!(std::fs::read_dir(&s.core.cache.directory)?.count(), 0);
+    let first = run(10000, 10000)?;
+    let bytes = std::fs::metadata(&first.dataset.source_file)?.len();
+    let active_id = first.dataset.id.clone();
+    let oldest = run(bytes, 2 * bytes)?.dataset.id.clone();
+    let newest = run(bytes, 2 * bytes)?.dataset.id.clone();
+    assert!(s.core.result(&active_id).is_ok() && s.core.result(&newest).is_ok());
+    assert!(s.core.result(&oldest).is_err());
+    drop(first);
+    s.control.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelling_an_active_query_discards_its_output_and_allows_another_query() -> Result<()> {
+    let s = Server::new().await?;
+    let core = s.core.clone();
+    let ct = CancellationToken::new();
+    let worker_ct = ct.clone();
+    let worker = tokio::task::spawn_blocking(move || {
+        query::run(
+            &core,
+            "SELECT sum(sin(i)) FROM range(1000000000) t(i)",
+            &worker_ct,
+            query::RESULT_LIMITS,
+        )
+    });
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while std::fs::read_dir(&s.core.cache.directory).unwrap().count() == 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await?;
+    ct.cancel();
+    let error = tokio::time::timeout(Duration::from_secs(3), worker)
+        .await??
+        .err()
+        .unwrap();
+    assert!(error.to_string().contains("cancelled"), "{error}");
+    assert_eq!(std::fs::read_dir(&s.core.cache.directory)?.count(), 0);
+    assert_eq!(
+        s.call("query", json!({"sql":"SELECT 1 AS n"})).await?["rows"],
+        json!([["1"]])
+    );
+    s.control.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn shutting_down_during_snapshot_export_cleans_the_workbook_without_waiting_for_the_grid(
+) -> Result<()> {
+    let s = Server::new().await?;
+    let result = s
+        .call("query", json!({"sql":"SELECT i FROM range(150000) t(i)"}))
+        .await?;
+    let snapshot = s
+        .call(
+            "save_snapshot",
+            json!({"resultId":result["resultId"], "name":"Export"}),
+        )
+        .await?;
+    let args =
+        serde_json::from_value(json!({"snapshotId":snapshot["id"], "fileName":"cancelled.xlsx"}))?;
+    let core = s.core.clone();
+    let folder = core.engine.directory.clone();
+    let files = || -> std::io::Result<std::collections::BTreeSet<_>> {
+        std::fs::read_dir(&folder)?
+            .map(|entry| entry.map(|e| e.file_name()))
+            .collect()
+    };
+    let initial = files()?;
+    // An unrelated desktop operation may hold its connection for the entire export.
+    let _grid = s.core.engine.conn.lock().unwrap();
+    let job =
+        tokio::task::spawn_blocking(move || core.export_excel(args, &CancellationToken::new()));
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !files().unwrap().iter().any(|f| !initial.contains(f)) {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    })
+    .await?;
+    tokio::time::timeout(Duration::from_secs(3), s.control.shutdown()).await??;
+    assert!(job.await?.is_err());
+    assert_eq!(files()?, initial);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_claimed_notebook_edit_waits_for_the_actual_save_outcome() -> Result<()> {
+    let s = Server::new().await?;
+    let args = serde_json::from_value(json!({"name":"Notes","cells":[]}))?;
+    let tools = Tools(s.core.clone());
+    let request = tokio::spawn(async move { tools.apply_edit(args).await });
+    let ticket = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if let Some(ticket) = s
+                .events
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|e| e["type"] == "edit")
+                .and_then(|e| e["ticket"].as_str())
+                .map(str::to_owned)
+            {
+                break ticket;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await?;
+    s.core
+        .edits
+        .lock()
+        .unwrap()
+        .get_mut(&ticket)
+        .unwrap()
+        .claimed = true;
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(31)).await;
+    tokio::task::yield_now().await;
+    assert!(!request.is_finished());
+    let pending = json!({"id":"example","applied":true,"saveStatus":"pending"});
+    s.core
+        .edits
+        .lock()
+        .unwrap()
+        .remove(&ticket)
+        .unwrap()
+        .reply
+        .send(Ok(pending.clone()))
+        .unwrap();
+    assert_eq!(request.await??, pending);
+    tokio::time::resume();
+    s.control.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn disconnecting_an_http_client_interrupts_the_query_and_frees_the_slot() -> Result<()> {
+    let s = Server::new().await?;
+    let post = s
+        .post(
+            "tools/call",
+            json!({"name":"query","arguments":{
+                "sql":"SELECT sum(sin(i)) FROM range(1000000000) t(i)"
+            }}),
+        )
+        .bearer_auth("test-token");
+    let request = tokio::spawn(async move { post.send().await });
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !s
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| e["type"] == "begin")
+        {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    })
+    .await?;
+    request.abort();
+    let _ = request.await;
+    let next = tokio::time::timeout(
+        Duration::from_secs(5),
+        s.call("query", json!({"sql":"SELECT 2"})),
+    )
+    .await??;
+    assert_eq!(next["rows"], json!([["2"]]));
+    assert!(s
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|e| e["type"] == "finish"
+            && e["error"]
+                .as_str()
+                .is_some_and(|msg| msg.contains("cancelled"))));
+    s.control.shutdown().await?;
     Ok(())
 }

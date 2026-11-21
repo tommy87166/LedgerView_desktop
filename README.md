@@ -34,9 +34,9 @@ Open a successful run of the desktop workflow and download the build from **Arti
 | --- | --- |
 | Registered sources | Original Parquet files, queried by path. |
 | Saved snapshots and notebooks | The workspace's `ledger.duckdb`. Open its folder from Settings. In memory mode, changes last for the session. |
-| MCP query results | Temporary local Parquet files. The latest eight successful results can be paged or saved as snapshots. Stopping MCP or closing the app removes the cache. The next launch cleans up any interrupted session. |
+| MCP query results | Temporary local Parquet files. Each result can use up to 2 GiB. The cache retains up to eight results within 8 GiB and evicts the oldest result available when space is needed. Saved snapshots remain in the workspace. Stopping MCP or closing the app removes the cache. The next launch cleans up any interrupted session. |
 
-**Excel export.** Each sheet holds up to 1,048,575 data rows plus a header. Further rows continue on a new sheet in snapshot order. Numeric cells and supported dates can be used in calculations. Text IDs retain their leading zeros, values exceeding Excel's 15-digit numeric precision are written as text, and timestamps retain their precision as text. An export that exceeds Excel's column or cell-text limits reports an error and preserves any existing destination file.
+**Excel export.** Each sheet holds up to 1,048,575 data rows plus a header. Further rows continue on a new sheet in snapshot order. Numeric cells and supported dates can be used in calculations. Text IDs retain their leading zeros, integers and fixed-point decimals exceeding 15 significant digits are written as text, and timestamps retain their precision as text. An export that exceeds Excel's column or cell-text limits reports an error and preserves any existing destination file.
 
 ## 🤖 Connect an AI client
 
@@ -50,7 +50,7 @@ Open **Settings → MCP** and enable the local service. Keep LedgerView running 
 
 Claude launches the same executable with `--mcp-stdio`. It connects to the open desktop workspace through a Unix socket on macOS or a local named pipe on Windows. Access is limited to processes running as your OS user while MCP is enabled. The Claude configuration contains only the executable path and arguments. If upgrading from the HTTP-backed bridge, replace the old entry to remove its saved token. Copy the configuration again if you move the executable. [MCP local server setup](https://modelcontextprotocol.io/docs/develop/connect-local-servers)
 
-**Streamable HTTP.** Choose **Copy HTTP settings** to get the loopback URL and authorization header. The default URL is `http://127.0.0.1:18476/mcp`. Change the port while MCP is off. Disk workspaces persist the port and token, and rotating the token revokes the previous one.
+**Streamable HTTP.** The default URL is `http://127.0.0.1:18476/mcp`. Change the port while MCP is off. Disk workspaces store the port and a SHA-256 hash of the bearer token. Existing credentials are migrated on opening the workspace. Copy the full HTTP settings when generating or rotating the token. Later, **Copy HTTP template** copies a placeholder for your saved token. Rotation immediately revokes the previous token.
 
 | Tool | Use |
 | --- | --- |
@@ -60,7 +60,7 @@ Claude launches the same executable with `--mcp-stdio`. It connects to the open 
 | `save_snapshot` | Save the complete result, optionally open it, or replace a snapshot previously created from an AI result. |
 | `export_excel` | Write an entire snapshot or query result to an Excel workbook. Supply `snapshotId` or `resultId` and optionally a `fileName` such as `summary.xlsx`. Files are saved directly in the workspace directory and existing files are preserved. |
 | `list_notebooks` | Read notebook names, cells, SQL, and revisions. |
-| `edit_notebook` | Create or edit notebooks. Revision checks detect concurrent edits. |
+| `edit_notebook` | Create or edit notebooks. Revision checks detect concurrent edits. If the desktop applies an edit and the disk save fails, the tool reports the draft as applied and pending save. |
 
 To inspect a query, enable the diagnostic log in Settings. It shows the SQL, bound values, elapsed time, and errors.
 

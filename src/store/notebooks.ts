@@ -146,7 +146,7 @@ export async function flushNotebook(id: string): Promise<void> {
   timers.delete(id);
   const pending = saving.get(id);
   if (pending) {
-    await pending;
+    await pending.catch(() => {});
     return flushNotebook(id);
   }
   const state = useNotebooks.getState();
@@ -167,7 +167,7 @@ export async function flushNotebook(id: string): Promise<void> {
       }
     })
     .catch((error) => {
-      setSaveStatus(id, 'failed');
+      if (useNotebooks.getState().books.find(b => b.id === id) === book) setSaveStatus(id, 'failed');
       throw error;
     })
     .finally(() => saving.delete(id));
@@ -234,7 +234,6 @@ export async function applyAiNotebook(before: StoredNotebook | null, name: strin
   const book = current;
   const updated = { ...book, name, cells: nextCells };
   editNotebook(updated);
-  await flushNotebook(book.id);
   const id = book.id;
   useNotebooks.setState(s => ({
     outputs: Object.fromEntries(Object.entries(s.outputs).filter(([key]) => {
@@ -242,5 +241,10 @@ export async function applyAiNotebook(before: StoredNotebook | null, name: strin
       return !key.startsWith(prefix) || !slots.has(Number(key.slice(prefix.length)));
     })),
   }));
-  return { id };
+  try {
+    await flushNotebook(id);
+    return { id };
+  } catch (error) {
+    return { id, applied: true, saveStatus: 'pending', message: 'Applied in LedgerView; pending save. Do not reapply this edit.', error: String(error) };
+  }
 }

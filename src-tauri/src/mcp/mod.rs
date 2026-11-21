@@ -22,7 +22,8 @@ use rmcp::transport::streamable_http_server::{
 use rmcp::{
     handler::server::wrapper::Parameters,
     model::{CallToolResult, ContentBlock},
-    tool, tool_handler, tool_router, ServerHandler,
+    service::RequestContext,
+    tool, tool_handler, tool_router, RoleServer, ServerHandler,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -33,6 +34,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+use subtle::ConstantTimeEq;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{oneshot, Semaphore};
 use tokio_util::sync::CancellationToken;
@@ -51,6 +53,7 @@ struct Workspace {
     cache: Arc<cache::Cache>,
     query_slot: Arc<Semaphore>,
     edits: Mutex<HashMap<String, PendingEdit>>,
+    exports: tokio_util::task::TaskTracker,
     stop: CancellationToken,
 }
 
@@ -59,12 +62,18 @@ impl Workspace {
         ensure!(!self.stop.is_cancelled(), "MCP is disabled");
         Ok(())
     }
-    fn run_query(&self, args: QueryArgs) -> Result<Value> {
+    fn check_request(&self, cancel: &CancellationToken) -> Result<()> {
+        self.check_enabled()?;
+        ensure!(!cancel.is_cancelled(), "Request cancelled");
+        Ok(())
+    }
+
+    fn run_query(&self, args: QueryArgs, cancel: &CancellationToken) -> Result<Value> {
         self.check_enabled()?;
         let token = Uuid::new_v4().to_string();
         (self.emit)(json!({ "type": "begin", "token": token, "sql": args.sql }))?;
         let started = Instant::now();
-        let result = query::run(self, &args.sql).and_then(|file| {
+        let result = query::run(self, &args.sql, cancel, query::RESULT_LIMITS).and_then(|file| {
             if args.preview {
                 (self.emit)(json!({ "type": "preview", "resultId": file.dataset.id }))?;
                 Ok(json!({ "resultId": file.dataset.id, "total": file.dataset.row_count, "preview": true }))
@@ -213,21 +222,26 @@ impl Tools {
     }
 
     #[tool(
-        description = "Run one DuckDB SELECT against workspace sources. Returns columns and up to 100 rows. Set preview=true to show the desktop grid without returning data rows. The last eight successful results can be paged or saved by resultId."
+        description = "Run one DuckDB SELECT against workspace sources. Returns columns and up to 100 rows. Set preview=true to show the desktop grid without returning data rows. Results up to 2 GiB can be paged or saved by resultId. The cache retains up to eight results within 8 GiB."
     )]
-    async fn query(&self, Parameters(args): Parameters<QueryArgs>) -> CallToolResult {
+    async fn query(
+        &self,
+        Parameters(args): Parameters<QueryArgs>,
+        context: RequestContext<RoleServer>,
+    ) -> CallToolResult {
         let core = self.0.clone();
-        let permit = core
-            .query_slot
-            .clone()
-            .acquire_owned()
-            .await
-            .expect("query semaphore stays open");
+        let cancel = context.ct.child_token();
+        let _cancel_on_drop = cancel.clone().drop_guard();
+        let permit = tokio::select! {
+            permit = core.query_slot.clone().acquire_owned() => permit.expect("query semaphore stays open"),
+            _ = cancel.cancelled() => return reply(Err(anyhow::anyhow!("Request cancelled"))),
+            _ = core.stop.cancelled() => return reply(Err(anyhow::anyhow!("MCP is disabled"))),
+        };
         reply(
             blocking(move || {
                 // Keep the slot until DuckDB stops even if the client disconnects early.
                 let _permit = permit;
-                core.run_query(args)
+                core.run_query(args, &cancel)
             })
             .await,
         )
@@ -258,9 +272,15 @@ impl Tools {
     #[tool(
         description = "Export one saved snapshot (snapshotId) or complete query result (resultId) to an Excel .xlsx file in the LedgerView workspace directory. fileName is optional and must be a filename only. Existing files are preserved."
     )]
-    async fn export_excel(&self, Parameters(args): Parameters<ExportArgs>) -> CallToolResult {
+    async fn export_excel(
+        &self,
+        Parameters(args): Parameters<ExportArgs>,
+        context: RequestContext<RoleServer>,
+    ) -> CallToolResult {
         let core = self.0.clone();
-        reply(blocking(move || core.export_excel(args)).await)
+        let cancel = context.ct.child_token();
+        let _cancel_on_drop = cancel.clone().drop_guard();
+        reply(blocking(move || core.export_excel(args, &cancel)).await)
     }
 
     #[tool(
@@ -325,7 +345,7 @@ impl Tools {
             );
         }
         let ticket = Uuid::new_v4().to_string();
-        let (send, recv) = oneshot::channel();
+        let (send, mut recv) = oneshot::channel();
         self.0.edits.lock().unwrap().insert(
             ticket.clone(),
             PendingEdit {
@@ -338,11 +358,26 @@ impl Tools {
                 "type": "edit", "ticket": ticket, "before": before,
                 "name": args.name, "cells": args.cells
             }))?;
-            tokio::select! {
-                _ = self.0.stop.cancelled() => anyhow::bail!("MCP is disabled"),
-                response = tokio::time::timeout(Duration::from_secs(30), recv) =>
-                    Ok(response.context("Desktop save was not acknowledged. Read notebooks before retrying")??.map_err(anyhow::Error::msg)?),
-            }
+            let reply = tokio::select! {
+                value = &mut recv => value,
+                _ = self.0.stop.cancelled() => anyhow::bail!("MCP closed. Check the notebook before retrying"),
+                _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                    // Expire an unclaimed ticket atomically with claim_edit. Once claimed,
+                    // the frontend may already have applied it or be queued for a save.
+                    {
+                        let mut edits = self.0.edits.lock().unwrap();
+                        if edits.get(&ticket).is_some_and(|edit| !edit.claimed) {
+                            edits.remove(&ticket);
+                            anyhow::bail!("Desktop did not accept the notebook edit");
+                        }
+                    }
+                    tokio::select! {
+                        value = recv => value,
+                        _ = self.0.stop.cancelled() => anyhow::bail!("MCP closed. Check the notebook before retrying"),
+                    }
+                }
+            };
+            reply.context("Desktop acknowledgement lost. Read the notebook before retrying")?.map_err(anyhow::Error::msg)
         }.await;
         self.0.edits.lock().unwrap().remove(&ticket);
         result
@@ -357,7 +392,7 @@ impl ServerHandler for Tools {}
 
 struct Running {
     url: String,
-    token: Arc<Mutex<String>>,
+    token_hash: Arc<Mutex<String>>,
     core: Arc<Workspace>,
     server: tokio::task::JoinHandle<std::io::Result<()>>,
     local_server: tokio::task::JoinHandle<()>,
@@ -378,6 +413,8 @@ async fn stop(running: &mut Option<Running>) -> Result<()> {
         previous.server.abort();
         let _ = previous.server.await;
         previous.local_server.await?;
+        previous.core.exports.close();
+        previous.core.exports.wait().await;
         tokio::task::spawn_blocking(move || previous.core.cache.close()).await??;
     }
     Ok(())
@@ -410,7 +447,7 @@ impl Control {
     }
 }
 
-fn router(core: Arc<Workspace>, host: String, token: Arc<Mutex<String>>) -> Router {
+fn router(core: Arc<Workspace>, host: String, token_hash: Arc<Mutex<String>>) -> Router {
     let config = StreamableHttpServerConfig::default()
         .with_allowed_hosts([host])
         .enforce_origin_validation()
@@ -429,7 +466,13 @@ fn router(core: Arc<Workspace>, host: String, token: Arc<Mutex<String>>) -> Rout
                 .headers()
                 .get(header::AUTHORIZATION)
                 .and_then(|h| h.as_bytes().strip_prefix(b"Bearer "))
-                .is_some_and(|value| value == token.lock().unwrap().as_bytes());
+                .is_some_and(|value| {
+                    bool::from(
+                        settings::token_hash(value)
+                            .as_bytes()
+                            .ct_eq(token_hash.lock().unwrap().as_bytes()),
+                    )
+                });
             async move {
                 if authorized {
                     Ok::<Response, StatusCode>(next.run(req).await)

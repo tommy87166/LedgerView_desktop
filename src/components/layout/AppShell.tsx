@@ -50,12 +50,16 @@ export function AppShell() {
   const selectedNumericColumn = numericColumns.find((column) => column.name === aggColumn);
 
   // 切換資料集時重置篩選彙總狀態（避免沿用前一個分頁的篩選）。
-  useEffect(() => {
+  const gridKey = JSON.stringify([activeId, active?.importedAt, lang]);
+  const [currentGrid, setCurrentGrid] = useState(gridKey);
+  if (currentGrid !== gridKey) {
+    setCurrentGrid(gridKey);
+    setAgg(null);
     setFilterModel({});
     setAggColumn('');
     setFilteredCount(null);
     setColPickerOpen(false);
-  }, [activeId, active?.importedAt, lang]);
+  }
 
   // 計算選定數值欄在目前篩選下的彙總（查帳常用）。
   useEffect(() => {
@@ -240,7 +244,7 @@ export function AppShell() {
         <div className="main-area">
           {active ? (
             <LedgerGrid
-              key={`${active.id}-${active.importedAt}-${lang}`}
+              key={gridKey}
               dataset={active}
               onFilteredCount={setFilteredCount}
               onApiReady={onApiReady}

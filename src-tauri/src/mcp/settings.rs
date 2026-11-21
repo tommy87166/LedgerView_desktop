@@ -1,4 +1,5 @@
 use super::*;
+use sha2::{Digest, Sha256};
 use std::path::Path;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -18,12 +19,19 @@ pub(crate) fn init(conn: &Connection) -> Result<()> {
          ON CONFLICT DO NOTHING",
         [DEFAULT_PORT],
     )?;
+    // Older versions stored the random bearer secret in this column.
+    // The prefix makes upgrades idempotent and distinguishes stored verifiers.
+    conn.execute(
+        "UPDATE ledger_internal.mcp_settings SET token='sha256:' || sha256(token)
+         WHERE token IS NOT NULL AND NOT starts_with(token, 'sha256:')",
+        [],
+    )?;
     Ok(())
 }
 
 struct Settings {
     port: u16,
-    token: Option<String>,
+    token_hash: Option<String>,
 }
 
 impl Settings {
@@ -34,7 +42,7 @@ impl Settings {
             |r| {
                 Ok(Self {
                     port: r.get(0)?,
-                    token: r.get(1)?,
+                    token_hash: r.get(1)?,
                 })
             },
         )?)
@@ -44,7 +52,7 @@ impl Settings {
         Info {
             port: self.port,
             url: running.map(|r| r.url.clone()),
-            has_token: self.token.is_some(),
+            has_token: self.token_hash.is_some(),
             persistent,
             new_token: None,
         }
@@ -77,11 +85,15 @@ async fn with_db<T: Send + 'static>(
     .await?
 }
 
+pub(super) fn token_hash(value: &[u8]) -> String {
+    format!("sha256:{:x}", Sha256::digest(value))
+}
+
 fn generate_token(conn: &Connection) -> Result<String> {
     let token = Uuid::new_v4().simple().to_string();
     conn.execute(
         "UPDATE ledger_internal.mcp_settings SET token=? WHERE id",
-        [&token],
+        [token_hash(token.as_bytes())],
     )?;
     Ok(token)
 }
@@ -135,13 +147,14 @@ impl Control {
         let local = stdio::Listener::bind(cache_root).context("Opening local MCP endpoint")?;
         // Reveal a new token only after the listener and cache have opened.
         let mut info = settings.info(None, engine.persistent);
-        let token = match settings.token {
+        let verifier = match settings.token_hash {
             Some(token) => token,
             None => {
                 let token = with_db(engine, generate_token).await?;
-                info.new_token = Some(token.clone());
+                let verifier = token_hash(token.as_bytes());
+                info.new_token = Some(token);
                 info.has_token = true;
-                token
+                verifier
             }
         };
         let core = Arc::new(Workspace {
@@ -151,9 +164,10 @@ impl Control {
             files: Default::default(),
             query_slot: Arc::new(Semaphore::new(1)),
             edits: Default::default(),
+            exports: Default::default(),
             stop: CancellationToken::new(),
         });
-        let token = Arc::new(Mutex::new(token));
+        let token = Arc::new(Mutex::new(verifier));
         let router = router(core.clone(), address.to_string(), token.clone());
         let stop = core.stop.clone();
         let server = tokio::spawn(async move {
@@ -166,7 +180,7 @@ impl Control {
         let local_server = tokio::spawn(local.serve(core.clone()));
         *running = Some(Running {
             url,
-            token,
+            token_hash: token,
             core,
             server,
             local_server,
@@ -178,14 +192,14 @@ impl Control {
         let running = self.0.lock().await;
         let token = with_db(engine, |conn| {
             ensure!(
-                Settings::read(conn)?.token.is_some(),
+                Settings::read(conn)?.token_hash.is_some(),
                 "Enable MCP to create the first token"
             );
             generate_token(conn)
         })
         .await?;
         if let Some(r) = running.as_ref() {
-            r.token.lock().unwrap().clone_from(&token);
+            *r.token_hash.lock().unwrap() = token_hash(token.as_bytes());
         }
         Ok(token)
     }
@@ -255,6 +269,7 @@ pub(crate) async fn mcp_regenerate_token(
 #[tauri::command]
 pub(crate) async fn mcp_copy_connection(
     claude_stdio: Option<bool>,
+    visible_token: Option<String>,
     app: AppHandle,
     state: State<'_, Control>,
 ) -> Result<(), String> {
@@ -264,7 +279,16 @@ pub(crate) async fn mcp_copy_connection(
         let executable = std::env::current_exe().map_err(|e| e.to_string())?;
         json!({"mcpServers":{"LedgerView":{"command":executable, "args":["--mcp-stdio"]}}})
     } else {
-        let token = r.token.lock().unwrap();
+        let token = visible_token.as_deref().unwrap_or("<YOUR_TOKEN>");
+        if visible_token.is_some()
+            && !bool::from(
+                token_hash(token.as_bytes())
+                    .as_bytes()
+                    .ct_eq(r.token_hash.lock().unwrap().as_bytes()),
+            )
+        {
+            return Err("Token was replaced. Open settings again".into());
+        }
         json!({"url":r.url, "headers":{"Authorization":format!("Bearer {token}")}})
     };
     app.clipboard()
@@ -317,6 +341,9 @@ mod tests {
         assert_eq!(url, format!("http://127.0.0.1:{port}/mcp"));
         let original = started.new_token.unwrap();
         assert_eq!(authenticate(&url, &original).await?, StatusCode::OK);
+        let stored = with_db(&db, |conn| Ok(Settings::read(conn)?.token_hash.unwrap())).await?;
+        assert_eq!(stored, token_hash(original.as_bytes()));
+        assert_eq!(authenticate(&url, &stored).await?, StatusCode::UNAUTHORIZED);
         let status = serde_json::to_string(&control.info(&db).await?)?;
         assert!(!status.contains(&original));
         assert!(control.set_port(&db, DEFAULT_PORT).await.is_err());
@@ -357,6 +384,25 @@ mod tests {
         control.shutdown().await?;
         control.set_port(&db, DEFAULT_PORT).await?;
         assert_eq!(control.info(&db).await?.port, DEFAULT_PORT);
+        Ok(())
+    }
+
+    #[test]
+    fn upgrades_plaintext_once_and_keeps_the_existing_http_credential() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        init(&conn)?;
+        let original = Uuid::new_v4().simple().to_string();
+        conn.execute(
+            "UPDATE ledger_internal.mcp_settings SET token=?",
+            [&original],
+        )?;
+        for _ in 0..2 {
+            init(&conn)?;
+            assert_eq!(
+                Settings::read(&conn)?.token_hash,
+                Some(token_hash(original.as_bytes()))
+            );
+        }
         Ok(())
     }
 

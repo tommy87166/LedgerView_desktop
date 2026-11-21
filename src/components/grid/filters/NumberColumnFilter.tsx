@@ -49,7 +49,13 @@ export function NumberColumnFilter({
     ),
   });
   const patch = (index: number, fields: Partial<NumberFilterCondition>) =>
-    setItems(items.map((v, i) => (i === index ? { ...v, ...fields } : v)));
+    setItems(items.map((v, i) => {
+      if (i !== index) return v;
+      const next = { ...v, ...fields };
+      if (next.type !== 'inRange') delete next.filterTo;
+      if (next.type === 'blank' || next.type === 'notBlank') delete next.filter;
+      return next;
+    }));
   const valid = items.every(
     (i) =>
       ['blank', 'notBlank'].includes(i.type) ||

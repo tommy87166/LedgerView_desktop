@@ -46,7 +46,13 @@ fn check_filename(name: &str) -> Result<()> {
 }
 
 impl Workspace {
-    pub(super) fn export_excel(&self, args: ExportArgs) -> Result<Value> {
+    pub(super) fn export_excel(
+        &self,
+        args: ExportArgs,
+        cancel: &CancellationToken,
+    ) -> Result<Value> {
+        // Shutdown drains active writers so their unfinished files are removed before exit.
+        let _active = self.exports.token();
         let source_id = match (&args.snapshot_id, &args.result_id) {
             (Some(id), None) | (None, Some(id)) => id,
             _ => anyhow::bail!("Supply exactly one of snapshotId or resultId"),
@@ -60,23 +66,30 @@ impl Workspace {
             !path.try_exists()?,
             "File already exists. Choose a different filename"
         );
-        let _access = self.cache.access()?;
+        let check = || self.check_request(cancel);
+        check()?;
         let mut output = tempfile::NamedTempFile::new_in(&self.engine.directory)
             .context("Opening the workspace directory for Excel export")?;
         let total = if args.result_id.is_some() {
+            let _access = self.cache.access()?;
             let file = self.result(source_id)?;
             let conn = Connection::open_in_memory()?;
-            crate::excel::write(&conn, &file.dataset, output.as_file_mut())?;
+            query::interruptible(&conn, check, || {
+                crate::excel::write_checked(&conn, &file.dataset, output.as_file_mut(), &check)
+            })?;
             file.dataset.row_count
         } else {
-            self.db(|conn| {
-                let ds = ledger::dataset(conn, source_id)?;
+            let conn = self.engine.reader()?;
+            query::interruptible(&conn, check, || {
+                let tx = conn.unchecked_transaction()?;
+                let ds = ledger::dataset(&tx, source_id)?;
                 ensure!(ds.ephemeral, "Select a snapshot");
-                crate::excel::write(conn, &ds, output.as_file_mut())?;
+                crate::excel::write_checked(&tx, &ds, output.as_file_mut(), &check)?;
+                tx.commit()?;
                 Ok(ds.row_count)
             })?
         };
-        self.check_enabled()?;
+        check()?;
         // Atomically publish only a new name, including when concurrent calls
         // choose the same destination or it is already a (possibly dangling) symlink.
         output

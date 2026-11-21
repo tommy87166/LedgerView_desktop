@@ -256,7 +256,6 @@ export function NotebookWorkspace() {
   return (
     <main className="table-workspace notebook-workspace">
       <header className="table-toolbar notebook-toolbar">
-        <span className="notebook-path">{t.title}</span>
         {book && (
           <>
             <input

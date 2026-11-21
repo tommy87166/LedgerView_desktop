@@ -2413,7 +2413,7 @@ dependencies = [
 
 [[package]]
 name = "ledgerview-desktop"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2423,6 +2423,7 @@ dependencies = [
  "duckdb",
  "dunce",
  "fs2",
+ "futures-util",
  "mcpmesh-local-api",
  "open",
  "reqwest",
@@ -2432,6 +2433,8 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "subtle",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -4920,6 +4923,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "libc",
  "pin-project-lite",
  "tokio",

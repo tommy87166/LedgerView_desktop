@@ -15,10 +15,11 @@ export function describeFilters(filters: FilterModel) {
         (f.includeBlanks ? ' ' + t.common.blank : '')
       );
     const label = grid[f.type as keyof typeof grid] ?? f.type;
+    if (f.type === 'blank' || f.type === 'notBlank') return [name, label].join(' ');
     const vals =
       f.filterType === 'date'
-        ? [f.dateFrom, f.dateTo]
-        : [f.filter, 'filterTo' in f ? f.filterTo : null];
+        ? [f.dateFrom, f.type === 'inRange' ? f.dateTo : null]
+        : [f.filter, f.type === 'inRange' ? f.filterTo : null];
     return [name, label, ...vals.filter((v) => v != null)].join(' ');
   }
   return Object.entries(filters)

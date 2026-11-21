@@ -66,11 +66,11 @@ export function McpSettings() {
     const { newToken, ...value } = await invoke<McpInfo>('mcp_set_enabled', { enabled: !enabled });
     setInfo(value);
     setPort(String(value.port));
-    setVisibleToken(newToken ?? '');
+    setVisibleToken(enabled ? '' : newToken ?? visibleToken);
   };
 
   const copyConnection = (claudeStdio: boolean) => perform(async () => {
-    await invoke('mcp_copy_connection', { claudeStdio });
+    await invoke('mcp_copy_connection', { claudeStdio, visibleToken: claudeStdio ? null : visibleToken || null });
     useUi.getState().toast('success', t.copied);
   });
 
@@ -113,7 +113,7 @@ export function McpSettings() {
         </div>
       </div>
       {enabled && <div className="mcp-actions">
-        <button className="btn" disabled={disabled} onClick={() => void copyConnection(false)}>{t.copy}</button>
+        <button className="btn" disabled={disabled} onClick={() => void copyConnection(false)}>{visibleToken ? t.copy : t.copyTemplate}</button>
         <button className="btn" disabled={disabled} onClick={() => void copyConnection(true)}>{t.copyClaude}</button>
       </div>}
       {info && !info.persistent && <p className="mcp-hint">{t.memory}</p>}

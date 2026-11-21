@@ -396,9 +396,7 @@ fn live_diagnostics_stream_the_worker_sql_and_report_its_error() -> Result<()> {
     let notify = |statement: LoggedStatement| {
         if statement.sql.contains("sum(sin(i))") {
             // Receiving this statement before dispatch finishes allows us to interrupt it.
-            if let Some((_, handle)) = s.engine.active.lock().unwrap().as_ref() {
-                handle.interrupt();
-            }
+            s.engine.cancel("live");
         }
     };
     let report = s.engine.execute(run, "live".into(), true, Some(&notify))?;
@@ -628,14 +626,15 @@ fn snapshot_xlsx_roundtrip_preserves_values_and_failed_export_preserves_destinat
 {
     use calamine::{open_workbook, Data, Reader, Xlsx};
     let s = Session::new()?;
-    let ds = s.file("example.parquet", "SELECT i AS seq, 12.50::DECIMAL(12,2) AS amount, '0012' AS code, '=1+1' AS note, NULL::VARCHAR AS missing, DATE '2020-02-03' AS posted, true AS ok, 18446744073709551615::UBIGINT AS large FROM range(4100) t(i)")?;
-    let columns = json!(["seq", "code", "amount", "note", "missing", "posted", "ok", "large"]);
+    let ds = s.file("example.parquet", "SELECT i AS seq, 12.50::DECIMAL(12,2) AS amount, '0012' AS code, '=1+1' AS note, NULL::VARCHAR AS missing, DATE '2020-02-03' AS posted, true AS ok, 18446744073709551615::UBIGINT AS large, (0.1::DOUBLE + 0.2::DOUBLE) AS fraction FROM range(4100) t(i)")?;
+    let columns =
+        json!(["seq", "code", "amount", "note", "missing", "posted", "ok", "large", "fraction"]);
     let snap = s.send(json!({"type":"snapshot","id":ds["id"],"columns":columns,"sort":[],"filters":{},"description":""}))?;
     let output = s.dir.path().join("snapshot.XLSX");
     s.send(json!({"type":"export","id":snap["id"],"path":output}))?;
     let mut book: Xlsx<_> = open_workbook(&output)?;
     let sheet = book.worksheet_range_at(0).unwrap()?;
-    assert_eq!(sheet.get_size(), (4101, 8));
+    assert_eq!(sheet.get_size(), (4101, 9));
     assert_eq!(sheet[(0, 1)], Data::String("code".into()));
     assert_eq!(sheet[(4100, 0)], Data::Float(4099.));
     assert_eq!(sheet[(1, 1)], Data::String("0012".into()));
@@ -645,6 +644,7 @@ fn snapshot_xlsx_roundtrip_preserves_values_and_failed_export_preserves_destinat
     assert!(matches!(sheet[(1, 5)], Data::DateTime(_)));
     assert_eq!(sheet[(1, 6)], Data::Bool(true));
     assert_eq!(sheet[(1, 7)], Data::String("18446744073709551615".into()));
+    assert_eq!(sheet[(1, 8)], Data::Float(0.1_f64 + 0.2));
     drop(book);
     let original = fs::read(&output)?;
     let ds = s.file("long.parquet", "SELECT repeat('x',32768) AS text")?;
@@ -670,5 +670,63 @@ fn snapshot_xlsx_continues_on_a_new_sheet_at_excels_row_limit() -> Result<()> {
     assert_eq!(last.get_size(), (2, 1));
     assert_eq!(last[(0, 0)], Data::String("i".into()));
     assert_eq!(last[(1, 0)], Data::Float(1048575.));
+    Ok(())
+}
+
+#[test]
+fn numeric_filters_match_the_float_columns_own_precision() -> Result<()> {
+    let s = Session::new()?;
+    let ds = s.file(
+        "fractions.parquet",
+        "SELECT x::FLOAT AS f, x::DOUBLE AS d FROM (VALUES (0.1), (0.2)) t(x)",
+    )?;
+    for col in ["f", "d"] {
+        for op in ["equals", "lessThanOrEqual", "inRange"] {
+            let filter =
+                json!({col:{"filterType":"number","type":op,"filter":"0.1","filterTo":"0.1"}});
+            assert_eq!(s.count(&ds["id"], filter)?, 1, "{col} {op}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn cancelling_a_queued_request_skips_its_database_operation() -> Result<()> {
+    let s = Session::new()?;
+    let engine = &s.engine;
+    std::thread::scope(|scope| -> Result<()> {
+        let busy = engine.conn.lock().unwrap();
+        engine.register("queued")?;
+        let request = serde_json::from_value(json!({"type":"createNotebook","cellName":"Q"}))?;
+        let queued =
+            scope.spawn(move || engine.execute_registered(request, "queued".into(), false, None));
+        engine.cancel("queued");
+        drop(busy);
+        assert!(queued
+            .join()
+            .unwrap()
+            .unwrap_err()
+            .to_string()
+            .contains("cancelled"));
+        Ok(())
+    })?;
+    assert!(engine.requests.lock().unwrap().is_empty());
+    assert_eq!(s.send(json!({"type":"restore"}))?["notebooks"], json!([]));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn opening_an_existing_workspace_restricts_database_access() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempdir()?;
+    let dir = temp.path().join("workspace");
+    drop(Engine::new(dir.clone())?);
+    let db = dir.join("ledger.duckdb");
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o755))?;
+    fs::set_permissions(&db, fs::Permissions::from_mode(0o644))?;
+    let _engine = Engine::new(dir.clone())?;
+    assert_eq!(dir.metadata()?.permissions().mode() & 0o777, 0o700);
+    assert_eq!(db.metadata()?.permissions().mode() & 0o777, 0o600);
     Ok(())
 }

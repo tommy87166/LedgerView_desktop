@@ -68,6 +68,33 @@ describe('notebook autosave', () => {
     expect(localStorage.getItem(key)).toBeNull();
   });
 
+  it('lets a newer autosave continue after a pending write fails', async () => {
+    let reject!: (error: Error) => void;
+    vi.mocked(request).mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }));
+    editNotebook(withSql('SELECT 1'));
+    const first = expect(flushNotebook(book.id)).rejects.toThrow('disk');
+    editNotebook(withSql('SELECT 2'));
+    await vi.advanceTimersByTimeAsync(350);
+    reject(Error('disk'));
+    await first;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).toHaveBeenLastCalledWith('saveNotebook', { book: withSql('SELECT 2') });
+    expect(useNotebooks.getState().saves.one).toBeUndefined();
+    expect(localStorage.getItem(key)).toBeNull();
+  });
+
+  it('reports an applied AI edit as pending and preserves the draft on disk errors', async () => {
+    vi.mocked(request).mockRejectedValueOnce(Error('disk'));
+    const edited = withSql('SELECT 3');
+    expect(await applyAiNotebook(book, book.name, edited.cells)).toMatchObject({
+      id: book.id, applied: true, saveStatus: 'pending',
+    });
+    expect(useNotebooks.getState().books[0]).toEqual(edited);
+    expect(JSON.parse(localStorage.getItem(key)!)).toEqual(edited);
+    await flushNotebook(book.id);
+    expect(localStorage.getItem(key)).toBeNull();
+  });
+
   it('keeps cell identity across edits, deletions and late query responses', async () => {
     restoreNotebooks(
       [

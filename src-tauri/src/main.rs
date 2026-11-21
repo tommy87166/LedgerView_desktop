@@ -14,8 +14,9 @@ use filter::{Filters, Sort};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
+    collections::HashMap,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 use tauri::{ipc::JavaScriptChannelId, Manager, State, Webview};
@@ -116,9 +117,50 @@ enum Request {
     },
 }
 
+enum QueryState {
+    Queued,
+    Running(Arc<InterruptHandle>),
+    Cancelled,
+}
+
+fn open_catalog(directory: &Path, db: &Path) -> Result<Connection> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(directory)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        anyhow::ensure!(
+            directory.symlink_metadata()?.is_dir(),
+            "Invalid workspace directory"
+        );
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
+        for path in [db.to_owned(), db.with_extension("duckdb.wal")] {
+            match path.symlink_metadata() {
+                Ok(meta) => {
+                    anyhow::ensure!(meta.is_file(), "Invalid workspace database file");
+                    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
+    let conn = Connection::open(db)?;
+    #[cfg(unix)]
+    fs::set_permissions(db, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+    Ok(conn)
+}
+
 struct Engine {
     conn: Mutex<Connection>,
-    active: Mutex<Option<(String, Arc<InterruptHandle>)>>,
+    readers: Mutex<Connection>,
+    requests: Mutex<HashMap<String, QueryState>>,
     directory: PathBuf,
     persistent: bool,
 }
@@ -126,10 +168,7 @@ struct Engine {
 impl Engine {
     fn new(directory: PathBuf) -> Result<Self> {
         let db = directory.join("ledger.duckdb");
-        let connection = fs::create_dir_all(&directory)
-            .map_err(anyhow::Error::from)
-            .and_then(|_| Ok(Connection::open(&db)?));
-        let (conn, persistent) = match connection {
+        let (conn, persistent) = match open_catalog(&directory, &db) {
             Ok(conn) => (conn, true),
             // A locked or damaged existing catalog must be reported, not silently bypassed.
             Err(e) if db.exists() => return Err(e.context("Opening LedgerView catalog")),
@@ -138,31 +177,71 @@ impl Engine {
         ledger::init(&conn)?;
         mcp::settings::init(&conn)?;
         Ok(Self {
+            readers: Mutex::new(conn.try_clone()?),
             conn: Mutex::new(conn),
-            active: Mutex::new(None),
+            requests: Default::default(),
             directory,
             persistent,
         })
     }
 
+    fn reader(&self) -> Result<Connection> {
+        Ok(self.readers.lock().unwrap().try_clone()?)
+    }
+
+    fn register(&self, token: &str) -> Result<()> {
+        let mut requests = self.requests.lock().unwrap();
+        anyhow::ensure!(!requests.contains_key(token), "Duplicate request");
+        requests.insert(token.to_owned(), QueryState::Queued);
+        Ok(())
+    }
+
+    fn cancel(&self, token: &str) {
+        if let Some(state) = self.requests.lock().unwrap().get_mut(token) {
+            if let QueryState::Running(handle) = state {
+                handle.interrupt();
+            }
+            *state = QueryState::Cancelled;
+        }
+    }
+
+    #[cfg(test)]
     fn execute(
         &self,
         request: Request,
         token: String,
         trace: bool,
-        on_statement: Option<&(dyn Fn(LoggedStatement) + Sync)>,
+        listener: Option<&(dyn Fn(LoggedStatement) + Sync)>,
+    ) -> Result<Value> {
+        self.register(&token)?;
+        self.execute_registered(request, token, trace, listener)
+    }
+
+    fn execute_registered(
+        &self,
+        request: Request,
+        token: String,
+        trace: bool,
+        listener: Option<&(dyn Fn(LoggedStatement) + Sync)>,
     ) -> Result<Value> {
         let conn = self
             .conn
             .lock()
             .map_err(|_| anyhow::anyhow!("Database unavailable"))?;
-        *self.active.lock().unwrap() = Some((token, conn.interrupt_handle()));
+        {
+            let mut requests = self.requests.lock().unwrap();
+            if matches!(requests.get(&token), Some(QueryState::Cancelled)) {
+                requests.remove(&token);
+                anyhow::bail!("Query cancelled");
+            }
+            requests.insert(token.clone(), QueryState::Running(conn.interrupt_handle()));
+        }
         let result = if trace {
-            self.trace_request(&conn, request, on_statement)
+            self.trace_request(&conn, request, listener)
         } else {
             self.dispatch(&conn, request)
         };
-        *self.active.lock().unwrap() = None;
+        self.requests.lock().unwrap().remove(&token);
         result
     }
 
@@ -342,6 +421,7 @@ async fn ledger_request(
     on_statement: Option<JavaScriptChannelId>,
 ) -> Result<Value, String> {
     let engine = database.0.clone()?;
+    engine.register(&token).map_err(|e| e.to_string())?;
     let on_statement = on_statement.map(|id| id.channel_on::<_, LoggedStatement>(webview));
     tauri::async_runtime::spawn_blocking(move || {
         let notify = |sql| {
@@ -352,7 +432,7 @@ async fn ledger_request(
         let listener: Option<&(dyn Fn(LoggedStatement) + Sync)> =
             on_statement.as_ref().map(|_| &notify as _);
         engine
-            .execute(request, token, trace.unwrap_or(false), listener)
+            .execute_registered(request, token, trace.unwrap_or(false), listener)
             .map_err(|e| format!("{e:#}"))
     })
     .await
@@ -364,11 +444,7 @@ fn cancel_query(database: State<'_, Database>, token: String) {
     let Ok(engine) = &database.0 else {
         return;
     };
-    if let Some((active, handle)) = engine.active.lock().unwrap().as_ref() {
-        if *active == token {
-            handle.interrupt();
-        }
-    }
+    engine.cancel(&token);
 }
 
 #[tauri::command]
@@ -390,6 +466,13 @@ fn main() {
             std::process::exit(1);
         }
         return;
+    }
+    // Apply before starting native workers: DuckDB can recreate its WAL on any write.
+    #[cfg(unix)]
+    {
+        let private = rustix::fs::Mode::from_bits_truncate(0o077);
+        let inherited = rustix::process::umask(private);
+        rustix::process::umask(inherited | private);
     }
     tauri::Builder::default()
         .manage(mcp::Control::default())

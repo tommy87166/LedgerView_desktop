@@ -186,7 +186,7 @@ fn condition(meta: &Column, c: &Condition, params: &mut Vec<String>) -> Result<S
             .map_or("", |(_, s)| s.trim_end_matches('0'));
         let scale = (fraction.len() as i64 - i64::from(exponent)).max(0);
         let target = if matches!(meta.duckdb_type.as_str(), "DOUBLE" | "FLOAT") {
-            "DOUBLE".into()
+            meta.duckdb_type.clone()
         } else if scale == 0 && meta.duckdb_type == "UHUGEINT" && !num.starts_with('-') {
             "UHUGEINT".into()
         } else if scale == 0 {

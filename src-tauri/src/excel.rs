@@ -10,6 +10,16 @@ const DATA_ROWS_PER_SHEET: i64 = 1_048_575;
 const BATCH: i64 = 4096;
 
 pub fn write(conn: &Connection, ds: &Dataset, dest: &mut File) -> Result<()> {
+    write_checked(conn, ds, dest, &|| Ok(()))
+}
+
+pub fn write_checked(
+    conn: &Connection,
+    ds: &Dataset,
+    dest: &mut File,
+    check: &(dyn Fn() -> Result<()> + Sync),
+) -> Result<()> {
+    check()?;
     ensure!(
         ds.columns.len() <= 16_384,
         "Excel supports at most 16,384 columns"
@@ -41,9 +51,13 @@ pub fn write(conn: &Connection, ds: &Dataset, dest: &mut File) -> Result<()> {
         let sheet_start = offset;
         let end = ds.row_count.min(sheet_start + DATA_ROWS_PER_SHEET);
         while offset < end {
+            check()?;
             let batch_end = end.min(offset + BATCH);
             let mut rows = statement.query([offset, batch_end])?;
             while let Some(values) = rows.next()? {
+                if offset % 128 == 0 {
+                    check()?;
+                }
                 let row = (offset - sheet_start + 1) as u32;
                 let mut all_null = true;
                 for (index, meta) in ds.columns.iter().enumerate() {
@@ -68,7 +82,22 @@ pub fn write(conn: &Connection, ds: &Dataset, dest: &mut File) -> Result<()> {
             break;
         }
     }
-    book.save_to_writer(dest)?;
+    check()?;
+    // ZIP compression also writes in chunks, after the last database batch.
+    struct CheckedWriter<'a> {
+        dest: &'a mut File,
+        check: &'a (dyn Fn() -> Result<()> + Sync),
+    }
+    impl std::io::Write for CheckedWriter<'_> {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            (self.check)().map_err(std::io::Error::other)?;
+            self.dest.write(bytes)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.dest.flush()
+        }
+    }
+    book.save_to_writer(CheckedWriter { dest, check })?;
     Ok(())
 }
 
@@ -85,7 +114,11 @@ fn write_cell(
         return Ok(());
     }
     if meta.display_type == "number" {
-        if let Some(n) = excel_number(value) {
+        let number = match meta.duckdb_type.as_str() {
+            "FLOAT" | "DOUBLE" => value.parse::<f64>().ok().filter(|n| n.is_finite()),
+            _ => excel_number(value),
+        };
+        if let Some(n) = number {
             sheet.write_number(row, col, n)?;
             return Ok(());
         }

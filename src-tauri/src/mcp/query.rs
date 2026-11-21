@@ -9,6 +9,7 @@ use tempfile::TempDir;
 pub(super) struct ResultFile {
     pub dataset: Dataset,
     pub sql: String,
+    bytes: u64,
     _directory: TempDir,
     cache: Arc<cache::Cache>,
 }
@@ -26,6 +27,21 @@ impl Files {
             .find(|r| r.dataset.id == id)
             .cloned()
             .context("Query result expired. Run the query again")
+    }
+
+    // Paged/exported results hold an Arc lease. Their disk space is only
+    // available after the final reader releases it.
+    fn make_room(&mut self, bytes: u64, total: u64, max_existing: usize) -> Result<()> {
+        let mut used: u64 = self.results.iter().map(|f| f.bytes).sum();
+        while used.saturating_add(bytes) > total || self.results.len() > max_existing {
+            let index = self
+                .results
+                .iter()
+                .rposition(|f| Arc::strong_count(f) == 1)
+                .context("Result cache is in use. Try again after the other requests finish")?;
+            used -= self.results.remove(index).unwrap().bytes;
+        }
+        Ok(())
     }
 
     fn sources(&mut self, conn: &Connection, cache: &Path) -> Result<Vec<(String, PathBuf)>> {
@@ -90,23 +106,79 @@ fn path_sql(path: &Path) -> Result<String> {
     Ok(literal(path.to_str().context("Invalid file path")?))
 }
 
-pub(super) fn run(core: &Workspace, sql: &str) -> Result<Arc<ResultFile>> {
+#[derive(Clone, Copy)]
+pub(super) struct Limits {
+    pub single: u64,
+    pub total: u64,
+}
+const GIB: u64 = 1024 * 1024 * 1024;
+pub(super) const RESULT_LIMITS: Limits = Limits {
+    single: 2 * GIB,
+    total: 8 * GIB,
+};
+
+pub(super) fn interruptible<T>(
+    conn: &Connection,
+    check: impl Fn() -> Result<()> + Sync,
+    work: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    check()?;
+    let handle = conn.interrupt_handle();
+    std::thread::scope(|scope| {
+        let (finish, done) = std::sync::mpsc::channel::<()>();
+        let poll = &check;
+        let monitor = scope.spawn(move || {
+            let mut error = None;
+            while let Err(std::sync::mpsc::RecvTimeoutError::Timeout) =
+                done.recv_timeout(Duration::from_millis(50))
+            {
+                if error.is_none() {
+                    error = poll().err();
+                }
+                if error.is_some() {
+                    handle.interrupt();
+                }
+            }
+            error
+        });
+        let result = work();
+        drop(finish);
+        if let Some(err) = monitor.join().expect("query monitor") {
+            return Err(err);
+        }
+        check()?;
+        result
+    })
+}
+
+pub(super) fn run(
+    core: &Workspace,
+    sql: &str,
+    cancel: &CancellationToken,
+    limits: Limits,
+) -> Result<Arc<ResultFile>> {
     ensure!(!sql.trim().is_empty(), "Enter a SQL query");
     let _access = core.cache.access()?;
     core.check_enabled()?;
     let dir = tempfile::tempdir_in(&core.cache.directory)?;
     let output = dunce::canonicalize(dir.path())?.join("result.parquet");
-    let sources = {
-        let conn = core
-            .engine
-            .conn
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Workspace unavailable"))?;
-        core.files
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let check = || {
+        core.check_request(cancel)?;
+        ensure!(Instant::now() < deadline, "Query exceeded 60 seconds");
+        Ok(())
+    };
+    let reader = core.engine.reader()?;
+    let sources = interruptible(&reader, check, || {
+        let tx = reader.unchecked_transaction()?;
+        let sources = core
+            .files
             .lock()
             .unwrap()
-            .sources(&conn, &core.cache.directory)?
-    };
+            .sources(&tx, &core.cache.directory)?;
+        tx.commit()?;
+        Ok(sources)
+    })?;
     let conn = Connection::open_in_memory()?;
     conn.execute_batch(
         "SET autoload_known_extensions=false; SET autoinstall_known_extensions=false;
@@ -136,40 +208,39 @@ pub(super) fn run(core: &Workspace, sql: &str) -> Result<Arc<ResultFile>> {
         "SET allowed_paths=[{}]; SET enable_external_access=false; SET lock_configuration=true",
         paths.join(",")
     ))?;
-    let handle = conn.interrupt_handle();
-    std::thread::scope(|scope| -> Result<()> {
-        let (finish, done) = std::sync::mpsc::channel::<()>();
-        let stop = core.stop.clone();
-        scope.spawn(move || {
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-            while let Err(std::sync::mpsc::RecvTimeoutError::Timeout) =
-                done.recv_timeout(std::time::Duration::from_millis(100))
-            {
-                if stop.is_cancelled() || std::time::Instant::now() >= deadline {
-                    handle.interrupt();
-                }
-            }
-        });
-        let result = conn.execute_batch(&format!(
+    let check_output = || {
+        check()?;
+        let bytes = match output.metadata() {
+            Ok(meta) => meta.len(),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(err) => return Err(err.into()),
+        };
+        ensure!(
+            bytes <= limits.single,
+            "Query result exceeds the {} byte limit",
+            limits.single
+        );
+        core.files.lock().unwrap().make_room(bytes, limits.total, 8)
+    };
+    let mut dataset = interruptible(&conn, check_output, || {
+        conn.execute_batch(&format!(
             "COPY (SELECT * FROM query({})) TO {} (FORMAT PARQUET, COMPRESSION ZSTD)",
             literal(sql),
             path_sql(&output)?
-        ));
-        drop(finish);
-        result?;
-        Ok(())
+        ))?;
+        ledger::file_dataset(&conn, &output)
     })?;
-    core.check_enabled()?;
-    let mut dataset = ledger::file_dataset(&conn, &output)?;
     dataset.display_name = "MCP".into();
     let file = Arc::new(ResultFile {
         dataset,
         sql: sql.into(),
+        bytes: output.metadata()?.len(),
         _directory: dir,
         cache: core.cache.clone(),
     });
     let mut files = core.files.lock().unwrap();
+    check()?;
+    files.make_room(file.bytes, limits.total, 7)?;
     files.results.push_front(file.clone());
-    files.results.truncate(8);
     Ok(file)
 }

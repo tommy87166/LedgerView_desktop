@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { LANGS, LANG_NAMES, setLang, useLang, useMessages, type Lang } from '../../i18n';
+import { request } from '../../lib/native';
 import { IconSettings } from '../common/icons';
 
 import { RowHeightPicker } from '../grid/RowHeightPicker';
@@ -18,6 +19,18 @@ export function WorkspaceSettings() {
   const diagnostics = useDiagnostics((s) => s.enabled);
   const [open, setOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const persistent = useUi((s) => s.persistent);
+  const [diskAvail, setDiskAvail] = useState<number | null>(null);
+  useEffect(() => {
+    if (!open || !persistent) return;
+    let active = true;
+    request('diskSpace', {}).then(
+      (bytes) => { if (active) setDiskAvail(bytes); },
+      () => { if (active) setDiskAvail(null); },
+    );
+    return () => { active = false; };
+  }, [open, persistent]);
+
   return (
     <>
       <button
@@ -49,6 +62,19 @@ export function WorkspaceSettings() {
           </select>
         </label>
         <RowHeightPicker value={rowHeight} onChange={setRowHeight} />
+        {persistent !== null && (
+          <div className="workspace-setting">
+            <span>{t.sidebar.storageMode}</span>
+            <span className={persistent ? 'storage-status' : 'storage-status memory'}
+              title={persistent ? t.topbar.persistentAvailTooltip : undefined}>
+              <span className="status-dot" aria-hidden="true" />
+              {persistent
+                ? diskAvail === null ? t.topbar.persistentBadge
+                  : t.topbar.persistentBadgeAvail((diskAvail / 1024 ** 3).toFixed(1) + ' GiB')
+                : t.topbar.memoryBadge}
+            </span>
+          </div>
+        )}
         <div className="workspace-setting">
           <button
             className="btn"
@@ -68,7 +94,7 @@ export function WorkspaceSettings() {
         <details>
           <summary>{t.changelog.title}</summary>
           <div className="changelog-entry">
-            <strong>v0.1.0</strong>
+            <strong>v1.0.0</strong>
             <p>{t.changelog.release}</p>
           </div>
         </details>

@@ -1,9 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMessages } from '../../i18n';
-import { request } from '../../lib/native';
 import { useDatasets } from '../../store/datasets';
-import { useSnapshots } from '../../store/snapshots';
-import { useUi } from '../../store/ui';
 import type { SnapshotMeta } from '../../types/snapshot';
 import { IconDatabase, IconSidebar, Logo } from '../common/icons';
 import { WorkspaceSettings } from './WorkspaceSettings';
@@ -31,9 +28,6 @@ export function WorkspaceSidebar({
   const t = useMessages();
   const sources = useDatasets((s) => s.datasets).filter((d) => !d.ephemeral);
   const activeId = useDatasets((s) => s.activeId);
-  const snapshotCount = useSnapshots((s) => s.snapshots.length);
-  const persistent = useUi((s) => s.persistent);
-  const [diskAvail, setDiskAvail] = useState<string | null>(null);
   const [width, setWidth] = useState(274);
   const [collapsed, setCollapsed] = useState(false);
   const toggle = useRef<HTMLButtonElement>(null);
@@ -41,19 +35,6 @@ export function WorkspaceSidebar({
   const sidebar = useRef<HTMLElement>(null);
   const dragOffset = useRef(0);
   const widthBeforeDrag = useRef(width);
-
-  useEffect(() => {
-    if (!persistent) return;
-    let alive = true;
-    void request('diskSpace', {})
-      .then((bytes) => {
-        if (alive) setDiskAvail(bytes == null ? null : (bytes / 1024 ** 3).toFixed(1) + ' GiB');
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [persistent, sources.length, snapshotCount]);
 
   const resize = (next: number) =>
     setWidth(Math.max(200, Math.min(next, 420, window.innerWidth * 0.42)));
@@ -71,6 +52,7 @@ export function WorkspaceSidebar({
           <>
             <Logo size={23} aria-hidden="true" />
             <h1>{t.appName}</h1>
+            <WorkspaceSettings />
           </>
         )}
         <button
@@ -130,19 +112,6 @@ export function WorkspaceSidebar({
         </section>
         <NotebookList onNavigate={onNotebookNavigate} />
       </div>
-      {persistent !== null && (
-        <footer className={`storage-status${persistent ? '' : ' memory'}`}>
-          <span className="status-dot" aria-hidden="true" />
-          <span title={persistent ? t.topbar.persistentAvailTooltip : undefined}>
-            {persistent
-              ? diskAvail
-                ? t.topbar.persistentBadgeAvail(diskAvail)
-                : t.topbar.persistentBadge
-              : t.topbar.memoryBadge}
-          </span>
-          <WorkspaceSettings />
-        </footer>
-      )}
       <div
         className="sidebar-divider"
         role="separator"

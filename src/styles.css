@@ -113,8 +113,7 @@ a:hover {
   font-weight: 600;
   letter-spacing: -0.025em;
 }
-.settings-button,
-.sidebar-toggle {
+.settings-button {
   margin-left: auto;
 }
 .quiet-button,
@@ -168,6 +167,7 @@ a:hover {
   outline-offset: -2px;
 }
 .sidebar-scroll {
+  grid-row: 2 / -1;
   min-height: 0;
   overflow-y: auto;
   padding: 12px 8px;
@@ -271,7 +271,24 @@ a:hover {
   padding: 0 4px 0 26px;
 }
 .snapshot-actions button {
+  position: relative;
   color: #554f4a;
+}
+.snapshot-actions button:is(:hover, :focus-visible)::after {
+  content: attr(aria-label);
+  position: absolute;
+  z-index: 3;
+  bottom: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 7px;
+  border-radius: 4px;
+  background: #35312e;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
 }
 .snapshot-actions button:hover {
   color: #27221e;
@@ -293,10 +310,7 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 7px;
-  min-height: 35px;
-  padding: 4px 12px;
-  border-top: 1px solid var(--lv-border);
-  font-size: 11px;
+  font-size: 13px;
   color: #57524e;
 }
 .status-dot {
@@ -849,7 +863,6 @@ input[type='number']:not(.ag-input-field-input):focus {
   font: inherit;
 }
 .notebook-toolbar { overflow: hidden; }
-.notebook-path { color: #655f5b; font-size: 13px; flex: none; }
 .notebook-name {
   font: inherit;
   font-weight: 600;
